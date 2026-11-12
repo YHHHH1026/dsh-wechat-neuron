@@ -536,6 +536,169 @@ window.__ModuleLoader__.load({
       return targets
     }
 
+    const STAR_BLUE = [0xcf, 0xe0, 0xff]
+    const STAR_WARM = [0xff, 0xe6, 0xc4]
+    const STAR_MAGENTA = [0xff, 0x9e, 0xcf]
+
+    /**
+     * 盘面星点云：纯数据，不碰 canvas，可在 Node 里直接测。
+     * 15% 核球（球对称）+ 85% 薄盘；薄盘里 70% 贴臂、30% 均匀铺满，
+     * 这是「看起来像旋涡星系」而不是「两条画上去的线」的关键。
+     */
+    function generateDiskPoints(rng) {
+      const random = typeof rng === 'function' ? rng : Math.random
+      const count = GALAXY.STARS
+      const xs = new Float32Array(count)
+      const ys = new Float32Array(count)
+      const zs = new Float32Array(count)
+      const bs = new Float32Array(count)
+      const colors = new Uint8Array(count * 3)
+      const armTotal = GALAXY.ARM_WEIGHT.reduce((a, b) => a + b, 0)
+      const pickArm = () => {
+        let u = random() * armTotal
+        for (let i = 0; i < GALAXY.ARM_WEIGHT.length; i += 1) {
+          u -= GALAXY.ARM_WEIGHT[i]
+          if (u <= 0) return i
+        }
+        return 0
+      }
+
+      for (let i = 0; i < count; i += 1) {
+        const isBulge = random() < GALAXY.BULGE_FRACTION
+        let x
+        let y
+        let z
+        let r
+        if (isBulge) {
+          r = galaxyMath.bulgeRadius(random)
+          const cosPhi = 1 - 2 * random()
+          const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi * cosPhi))
+          const theta = random() * Math.PI * 2
+          x = Math.cos(theta) * sinPhi * r
+          z = Math.sin(theta) * sinPhi * r
+          y = cosPhi * r * 0.62
+        } else {
+          // 拒绝采样保证所有点都落在位图跨度内（指数盘尾部会溢出 DISK_R）
+          do { r = galaxyMath.diskRadius(random) } while (r > GALAXY.DISK_R)
+          let theta
+          if (random() < 0.7) {
+            const arm = pickArm()
+            theta = galaxyMath.armAngle(arm, Math.max(GALAXY.R0, r)) + galaxyMath.gauss(random, galaxyMath.armSigma(r))
+          } else {
+            theta = random() * Math.PI * 2
+          }
+          x = Math.cos(theta) * r
+          z = Math.sin(theta) * r
+          y = galaxyMath.gauss(random, 0.055 * Math.sqrt(r))
+        }
+
+        xs[i] = x
+        ys[i] = y
+        zs[i] = z
+        bs[i] = galaxyMath.starBrightness(random())
+
+        let color = STAR_BLUE
+        if (r < 0.3 && random() < 0.55) color = STAR_WARM
+        else if (!isBulge && random() < 0.03) color = STAR_MAGENTA
+        colors[i * 3] = color[0]
+        colors[i * 3 + 1] = color[1]
+        colors[i * 3 + 2] = color[2]
+      }
+
+      return { count, xs, ys, zs, bs, colors }
+    }
+
+    /** 预渲染一枚软高斯星点 sprite；同一颜色复用，避免每帧建渐变。 */
+    function makeStarSprite(color, size = 64) {
+      const canvas = typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(size, size)
+        : (typeof document !== 'undefined' ? document.createElement('canvas') : null)
+      if (!canvas) return null
+      canvas.width = size
+      canvas.height = size
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return null
+      const half = size / 2
+      const gradient = ctx.createRadialGradient(half, half, 0, half, half, half)
+      const [r, g, b] = color
+      gradient.addColorStop(0, `rgba(${r},${g},${b},1)`)
+      gradient.addColorStop(0.25, `rgba(${r},${g},${b},0.55)`)
+      gradient.addColorStop(0.55, `rgba(${r},${g},${b},0.14)`)
+      gradient.addColorStop(1, `rgba(${r},${g},${b},0)`)
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, size, size)
+      return canvas
+    }
+
+    /**
+     * 把点云光栅化成一张固定 3072² 的盘面位图。
+     * 只依赖 GALAXY，与视口无关——相机那边用 setTransform 直接贴。
+     */
+    function renderDiskBitmap(points) {
+      const size = GALAXY.DISK_BITMAP
+      const canvas = typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(size, size)
+        : (typeof document !== 'undefined' ? document.createElement('canvas') : null)
+      if (!canvas) return null
+      canvas.width = size
+      canvas.height = size
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return null
+
+      const scale = size / (GALAXY.DISK_R * 2)
+      const toPx = (v) => (v + GALAXY.DISK_R) * scale
+      const sprites = {
+        blue: makeStarSprite(STAR_BLUE),
+        warm: makeStarSprite(STAR_WARM),
+        magenta: makeStarSprite(STAR_MAGENTA),
+      }
+
+      ctx.clearRect(0, 0, size, size)
+      ctx.globalCompositeOperation = 'lighter'
+      for (let i = 0; i < points.count; i += 1) {
+        const b = points.bs[i]
+        // 位图像素 ≠ 屏幕像素：暗星只有 2–3 位图像素（靠加性叠成雾），
+        // 亮星必须单独放大到 6–14 位图像素才撑得起结构感。
+        const diameter = b > 0.9 ? 6 + 8 * b : 2 + b
+        const red = points.colors[i * 3]
+        const green = points.colors[i * 3 + 1]
+        const sprite = red === STAR_WARM[0] && green === STAR_WARM[1]
+          ? sprites.warm
+          : (green === STAR_MAGENTA[1] && red === STAR_MAGENTA[0] ? sprites.magenta : sprites.blue)
+        if (!sprite) continue
+        ctx.globalAlpha = 0.20 + 0.80 * b
+        const half = diameter / 2
+        ctx.drawImage(sprite, toPx(points.xs[i]) - half, toPx(points.zs[i]) - half, diameter, diameter)
+      }
+
+      // 尘埃带：沿主臂内缘擦掉一条低 alpha 的暗带。
+      // 这一步把「一坨发光斑块」变成「有结构的盘」，不可省。
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.lineCap = 'round'
+      for (const arm of [0, 2]) {
+        for (let lane = 0; lane < 4; lane += 1) {
+          const offset = galaxyMath.armSigma(0.7) * (1.6 + lane * 0.35)
+          const width = (0.045 + lane * 0.012) * scale
+          ctx.globalAlpha = 0.18 - lane * 0.022
+          ctx.lineWidth = width
+          ctx.beginPath()
+          let started = false
+          for (let step = 0; step <= 40; step += 1) {
+            const r = 0.22 + (step / 40) * (GALAXY.DISK_R - 0.24)
+            const theta = galaxyMath.armAngle(arm, r) - offset
+            const px = toPx(Math.cos(theta) * r)
+            const py = toPx(Math.sin(theta) * r)
+            if (!started) { ctx.moveTo(px, py); started = true } else ctx.lineTo(px, py)
+          }
+          ctx.stroke()
+        }
+      }
+
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = 1
+      return canvas
+    }
+
     class NeuronRenderer {
       constructor(canvas, handlers) {
         this.canvas = canvas
@@ -1986,7 +2149,7 @@ window.__ModuleLoader__.load({
     }
 
     if (globalThis.__WNEUR_TEST__ === true) {
-      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets }
+      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite }
     }
 
     return exported
