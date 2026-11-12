@@ -50,7 +50,7 @@ window.__ModuleLoader__.load({
   --wnr-drawer-bg: rgba(7,10,20,.74); --wnr-card-bg: rgba(14,20,36,.68);
   --wnr-scroll-track: rgba(10,16,32,.72); --wnr-scroll-edge: rgba(120,160,255,.10);
   --wnr-scroll-a: rgba(122,168,255,.42); --wnr-scroll-b: rgba(94,231,208,.30); --wnr-scroll-hi: rgba(160,205,255,.78);
-  --wnr-knob-track: rgba(120,160,255,.14); --wnr-knob-a: #6fc7ff; --wnr-knob-b: #5ee7d0;
+  --wnr-knob-track: rgba(120,160,255,.34); --wnr-knob-a: #6fc7ff; --wnr-knob-b: #5ee7d0;
   position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;
   color: var(--wnr-text); background: var(--wnr-bg);
   font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
@@ -64,7 +64,7 @@ window.__ModuleLoader__.load({
   --wnr-drawer-bg: rgba(255,255,255,.78); --wnr-card-bg: rgba(255,255,255,.72);
   --wnr-scroll-track: rgba(24,48,96,.07); --wnr-scroll-edge: rgba(24,48,96,.10);
   --wnr-scroll-a: rgba(47,111,237,.42); --wnr-scroll-b: rgba(13,148,136,.34); --wnr-scroll-hi: rgba(47,111,237,.72);
-  --wnr-knob-track: rgba(24,48,96,.12); --wnr-knob-a: #2f6fed; --wnr-knob-b: #0d9488; }
+  --wnr-knob-track: rgba(24,48,96,.30); --wnr-knob-a: #2f6fed; --wnr-knob-b: #0d9488; }
 .wneur[data-scheme="light"] .wneur-title h1 { color: #16305c; }
 .wneur[data-scheme="light"] .wneur-btn { color: #2b3f60; border-color: rgba(47,111,237,.24); background: var(--wnr-tint); }
 .wneur[data-scheme="light"] .wneur-btn:hover { background: rgba(47,111,237,.16); color: #10233f; }
@@ -104,13 +104,16 @@ window.__ModuleLoader__.load({
 .wneur[data-scheme="light"] .wneur-loading { color: #5d6d8b; }
 .wneur[data-scheme="light"] .wneur-tune { background: linear-gradient(180deg, rgba(47,111,237,.07), rgba(13,148,136,.04) 42%, transparent), var(--wnr-card-bg); }
 .wneur[data-scheme="light"] .wneur-tune-actions button:hover { background: rgba(47,111,237,.16); color: #10233f; }
-.wneur[data-scheme="light"] .wneur-pal button[aria-pressed="true"] { color: #10305e; background: rgba(47,111,237,.14); }
+.wneur[data-scheme="light"] .wneur-pal button[aria-pressed="true"] { color: #10305e; background: rgba(47,111,237,.14); box-shadow: none; }
 .wneur[data-scheme="light"] .wneur-knob input[type="range"]::-webkit-slider-thumb {
+  background: radial-gradient(circle at 35% 32%, #ffffff, var(--wnr-knob-a) 66%, rgba(20,40,80,.55));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 1px 5px rgba(20,40,80,.35); }
+.wneur[data-scheme="light"] .wneur-knob input[type="range"]::-moz-range-thumb {
   background: radial-gradient(circle at 35% 32%, #ffffff, var(--wnr-knob-a) 66%, rgba(20,40,80,.55));
   box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 1px 5px rgba(20,40,80,.35); }
 .wneur * { box-sizing: border-box; }
 /* 自绘滚动条：轨道/滑块都取自深空色板，不用系统灰条 */
-.wneur { scrollbar-width: thin; scrollbar-color: var(--wnr-scroll-thumb) var(--wnr-scroll-track); }
+.wneur { scrollbar-width: thin; scrollbar-color: var(--wnr-scroll-hi) var(--wnr-scroll-track); }
 .wneur ::-webkit-scrollbar { width: 9px; height: 9px; }
 .wneur ::-webkit-scrollbar-track { background: var(--wnr-scroll-track); border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--wnr-scroll-edge); }
@@ -225,13 +228,18 @@ window.__ModuleLoader__.load({
   transition: background .15s, color .15s, border-color .15s, transform .12s; }
 .wneur-tune-actions button:hover { background: rgba(111,199,255,.2); color: var(--wnr-strong); border-color: var(--wnr-border-hi); }
 .wneur-tune-actions button:active { transform: translateY(1px); }
+/* 「存默认」是持久化写入，权重高于复位/随机：给它 accent 描边并与随机拉开间距 */
+.wneur-tune-actions button[data-role="save"] { border-color: var(--wnr-accent); color: var(--wnr-accent); margin-left: 5px; }
+.wneur-tune-actions button:focus-visible, .wneur-pal button:focus-visible {
+  outline: 2px solid var(--wnr-accent); outline-offset: 2px; }
 .wneur-knob { display: block; padding: 4px 0 2px; }
 .wneur-knob-head { display: flex; align-items: baseline; gap: 6px; font-size: 11.5px; color: var(--wnr-soft); }
 .wneur-knob-head b { font-weight: 500; }
 .wneur-knob-head em { margin-left: auto; font-style: normal; font-size: 11px; color: var(--wnr-accent);
   font-variant-numeric: tabular-nums; }
-.wneur-knob input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 16px;
-  margin: 2px 0 0; background: transparent; cursor: ew-resize; display: block; }
+/* 命中区 24px（WCAG 2.2 SC 2.5.8 最小目标尺寸），轨道仍只有 4px 粗 */
+.wneur-knob input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 24px;
+  margin: 0; background: transparent; cursor: ew-resize; display: block; }
 .wneur-knob input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px;
   background: linear-gradient(90deg, var(--wnr-knob-a) 0%, var(--wnr-knob-b) var(--wnr-fill, 50%), var(--wnr-knob-track) var(--wnr-fill, 50%)); }
 .wneur-knob input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
@@ -246,8 +254,8 @@ window.__ModuleLoader__.load({
 .wneur-knob input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; border: 0;
   background: radial-gradient(circle at 35% 32%, #ffffff, var(--wnr-knob-a) 62%, rgba(20,40,80,.9));
   box-shadow: 0 0 8px rgba(111,199,255,.55); }
-.wneur-knob input[type="range"]:focus-visible { outline: 1px solid var(--wnr-border-hi); outline-offset: 3px; border-radius: 8px; }
-.wneur-knob small { display: block; font-size: 10px; line-height: 1.35; color: var(--wnr-dim); margin-top: 1px; }
+.wneur-knob input[type="range"]:focus-visible { outline: 2px solid var(--wnr-accent); outline-offset: 2px; border-radius: 8px; }
+.wneur-knob small { display: block; font-size: 10px; line-height: 1.35; color: var(--wnr-muted); margin-top: 1px; }
 .wneur-pal { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 2px 0 6px; }
 .wneur-pal button { padding: 5px 2px 4px; font-size: 10.5px; border-radius: 8px; cursor: pointer; color: var(--wnr-muted);
   border: 1px solid var(--wnr-border); background: var(--wnr-tint-2); display: flex; flex-direction: column;
@@ -256,8 +264,9 @@ window.__ModuleLoader__.load({
 .wneur-pal button:hover { color: var(--wnr-strong); background: var(--wnr-tint); }
 .wneur-pal button[aria-pressed="true"] { color: var(--wnr-strong); border-color: var(--wnr-border-hi);
   background: rgba(111,199,255,.16); box-shadow: inset 0 0 0 1px rgba(160,205,255,.16); }
-.wneur-tune-foot { margin-top: 7px; font-size: 10px; color: var(--wnr-dim); display: flex; gap: 6px; align-items: center; }
+.wneur-tune-foot { margin-top: 7px; font-size: 10px; color: var(--wnr-muted); display: flex; gap: 6px; align-items: center; }
 .wneur-tune-foot span { flex: 1; }
+.wneur-tune-foot[data-busy="true"] span { color: var(--wnr-accent); }
 
 .wneur-timeline { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 18px 12px;
   border-top: 1px solid var(--wnr-border); background: var(--wnr-panel-2);
@@ -330,13 +339,23 @@ window.__ModuleLoader__.load({
 .wneur-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .wneur-toast { position: absolute; left: 50%; bottom: 78px; transform: translateX(-50%); z-index: 50;
   padding: 8px 18px; border-radius: 999px; font-size: 12.5px; color: #dfeaff;
+  display: flex; align-items: center; gap: 12px;
   background: rgba(10,16,30,.94); border: 1px solid rgba(140,190,255,.3);
   box-shadow: 0 10px 34px rgba(0,0,0,.5), 0 0 20px rgba(90,150,255,.14); }
+.wneur-toast button { padding: 2px 10px; font-size: 11.5px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--wnr-accent); background: transparent; color: var(--wnr-accent); }
+.wneur-toast button:hover { background: rgba(111,199,255,.18); }
+.wneur-toast button:focus-visible { outline: 2px solid var(--wnr-accent); outline-offset: 2px; }
 .wneur-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 12px; font-size: 12.5px; color: var(--wnr-muted); z-index: 5; }
 .wneur-spin { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(120,160,255,.18);
   border-top-color: #6fc7ff; animation: wnr-spin .8s linear infinite; box-shadow: 0 0 18px rgba(110,199,255,.35); }
 @keyframes wnr-spin { to { transform: rotate(360deg); } }
+/* 系统「减少动效」：CSS 层兜底（JS 层另有 autoRotate 初值判断） */
+@media (prefers-reduced-motion: reduce) {
+  .wneur *, .wneur *::before, .wneur *::after {
+    transition: none !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
 .wneur-tip { position: absolute; z-index: 30; pointer-events: none; padding: 7px 11px; border-radius: 9px;
   font-size: 11.5px; line-height: 1.55; max-width: 280px; color: #dbe6ff;
   background: rgba(8,13,24,.94); border: 1px solid rgba(120,160,255,.24);
@@ -595,6 +614,16 @@ window.__ModuleLoader__.load({
     function writeSavedTuning(tuning) {
       try {
         globalThis.localStorage?.setItem(TUNING_STORAGE_KEY, JSON.stringify(tuning))
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    /** 复位必须连本机默认一起清掉，否则下次打开又回到旧参数（复位就成了假的）。 */
+    function clearSavedTuning() {
+      try {
+        globalThis.localStorage?.removeItem(TUNING_STORAGE_KEY)
         return true
       } catch {
         return false
@@ -1093,13 +1122,15 @@ window.__ModuleLoader__.load({
         if (this._diskScheduled) { this._diskDirty = true; return }
         this._diskScheduled = true
         this._diskDirty = false
+        this.handlers.onDiskBusy?.(true)
         const build = () => {
           this._diskScheduled = false
           const bitmap = renderDiskBitmap(generateDiskPoints(Math.random))
           if (bitmap) this.disk = { bitmap, dpr }
           this.start()
           // 拖动旋钮时多次 force 会合并成一次重建，但最后一次的值必须生效
-          if (this._diskDirty) { this._diskDirty = false; this.ensureDisk(true) }
+          if (this._diskDirty) { this._diskDirty = false; this.ensureDisk(true); return }
+          this.handlers.onDiskBusy?.(false)
         }
         if (typeof requestIdleCallback === 'function') requestIdleCallback(build, { timeout: 120 })
         else setTimeout(build, 0)
@@ -1847,13 +1878,13 @@ window.__ModuleLoader__.load({
      * 拖动即时生效 —— disk 类改动走 rebuildGalaxy（idle 合并重建位图），
      * view 类改动只写相机/节点层，每帧读，零重建。
      */
-    function GalaxyTuning({ tuning, onPatch, onReset, onRandom, onSave }) {
+    function GalaxyTuning({ tuning, busy, onPatch, onReset, onRandom, onSave }) {
       return h('div', { className: 'wneur-card wneur-tune' },
         h('h3', null, '星系调校'),
         h('div', { className: 'wneur-tune-actions' },
-          h('button', { onClick: onReset, title: '回到出厂参数' }, '复位'),
-          h('button', { onClick: onRandom, title: '在「读得出螺旋」的区间里随机' }, '随机'),
-          h('button', { onClick: onSave, title: '把当前参数存为本机默认' }, '存默认')),
+          h('button', { onClick: onReset, title: '回到出厂参数，并清除本机默认' }, '复位'),
+          h('button', { onClick: onRandom, title: '在「读得出螺旋」的区间里随机（可撤销）' }, '随机'),
+          h('button', { 'data-role': 'save', onClick: onSave, title: '把当前参数存为本机默认' }, '存默认')),
         h('div', { className: 'wneur-pal' },
           PALETTE_IDS.map(id => h('button', {
             key: id,
@@ -1877,13 +1908,14 @@ window.__ModuleLoader__.load({
             h('input', {
               type: 'range', min: knob.min, max: knob.max, step: knob.step, value,
               'aria-label': knob.label,
+              'aria-valuetext': formatKnob(knob, value),
               style: { '--wnr-fill': `${Math.max(0, Math.min(100, fill)).toFixed(1)}%` },
               onChange: (event) => onPatch({ [knob.key]: Number(event.target.value) }),
             }),
             knob.hint ? h('small', null, knob.hint) : null)
         }),
-        h('div', { className: 'wneur-tune-foot' },
-          h('span', null, '拖动即时生效 · 盘面参数会重建位图')))
+        h('div', { className: 'wneur-tune-foot', 'data-busy': busy === true },
+          h('span', { 'aria-live': 'polite' }, busy === true ? '重建盘面中…' : '拖动即时生效 · 盘面参数会重建位图')))
     }
 
     function SettingsModal({ status, onClose, onRefresh, onToast }) {
@@ -2067,6 +2099,8 @@ window.__ModuleLoader__.load({
       const [selected, setSelected] = useState(null)
       const [hover, setHover] = useState(null)
       const [toast, setToast] = useState('')
+      const [toastAction, setToastAction] = useState(null)
+      const [diskBusy, setDiskBusy] = useState(false)
       const [showSettings, setShowSettings] = useState(false)
       const [showLegend, setShowLegend] = useState(false)
       const [harvesting, setHarvesting] = useState(false)
@@ -2087,9 +2121,16 @@ window.__ModuleLoader__.load({
       // 外观主题必须在任何依赖它的渲染/依赖数组之前取值（否则触发 TDZ）
       const scheme = useScheme()
 
-      const showToast = useCallback((message) => {
+      const showToast = useCallback((message, action = null) => {
         setToast(message)
-        window.setTimeout(() => setToast(current => (current === message ? '' : current)), 2600)
+        setToastAction(action)
+        // 带撤销按钮的 toast 留久一点，给用户反应时间
+        const ttl = action === null ? 2600 : 6000
+        window.setTimeout(() => setToast(current => {
+          if (current !== message) return current
+          setToastAction(null)
+          return ''
+        }), ttl)
       }, [])
 
       const loadGraph = useCallback(async (options = {}) => {
@@ -2156,6 +2197,7 @@ window.__ModuleLoader__.load({
         if (canvasRef.current === null) return undefined
         const renderer = new NeuronRenderer(canvasRef.current, {
           onHover: (info) => setHover(info),
+          onDiskBusy: (busy) => setDiskBusy(busy),
           onPick: (info) => {
             setSelected(info === null ? null : info.id)
             if (info === null) { setDetail(null); return }
@@ -2271,13 +2313,18 @@ window.__ModuleLoader__.load({
       const patchTuning = useCallback((patch) => setTuning(current => ({ ...current, ...patch })), [])
       const resetTuning = useCallback(() => {
         setTuning(tuningDefaults())
+        const cleared = clearSavedTuning()
         rendererRef.current?.reset()
-        showToast('星系参数已复位')
+        showToast(cleared ? '已复位并清除本机默认' : '已复位（本机存储不可用，未能清除已存默认）')
       }, [showToast])
       const randomTuning = useCallback(() => {
+        const previous = tuning
         setTuning(tuningRandom(Math.random))
-        showToast('已随机一套星系参数')
-      }, [showToast])
+        showToast('已随机一套星系参数', {
+          label: '撤销',
+          run: () => { setTuning(previous); showToast('已撤销随机') },
+        })
+      }, [tuning, showToast])
       const saveTuning = useCallback(() => {
         showToast(writeSavedTuning(tuning) ? '已存为本机默认，下次打开自动套用' : '保存失败：浏览器存储不可用')
       }, [tuning, showToast])
@@ -2368,13 +2415,6 @@ window.__ModuleLoader__.load({
         })(),
         h('div', { className: 'wneur-main' },
           h('div', { className: 'wneur-rail' },
-            h(GalaxyTuning, {
-              tuning,
-              onPatch: patchTuning,
-              onReset: resetTuning,
-              onRandom: randomTuning,
-              onSave: saveTuning,
-            }),
             h('div', { className: 'wneur-card' },
               h('h3', null, '重要度分层'),
               TIERS.filter(tier => tier.id !== 'topic').map(tier => h('label', { className: 'wneur-check', key: tier.id },
@@ -2418,6 +2458,15 @@ window.__ModuleLoader__.load({
                   h('i', null, index + 1),
                   h('b', null, shortLabel(node.label, 10)),
                   h(TierPill, { tier: node.tier, score: node.score }))))),
+            // 调校区常驻但排在业务卡之后：分层/显示/榜单先占首屏，工具墙不喧宾夺主
+            h(GalaxyTuning, {
+              tuning,
+              busy: diskBusy,
+              onPatch: patchTuning,
+              onReset: resetTuning,
+              onRandom: randomTuning,
+              onSave: saveTuning,
+            }),
           ),
           h('div', { className: 'wneur-canvas-wrap' },
             h('canvas', { ref: canvasRef, className: 'wneur-canvas' }),
@@ -2474,7 +2523,11 @@ window.__ModuleLoader__.load({
           onRefresh: () => loadGraph({ refresh: true }),
           onToast: showToast,
         }),
-        toast !== '' && h('div', { className: 'wneur-toast' }, toast),
+        toast !== '' && h('div', { className: 'wneur-toast', role: 'status' },
+          h('span', null, toast),
+          toastAction !== null && h('button', {
+            onClick: () => { const run = toastAction.run; setToast(''); setToastAction(null); run() },
+          }, toastAction.label)),
       )
     }
 
@@ -2551,7 +2604,7 @@ window.__ModuleLoader__.load({
       exported.__test = {
         NeuronRenderer, GALAXY, GALAXY_DEFAULTS, VIEW_DEFAULTS, STAR_PALETTES, PALETTE_IDS,
         TUNING, RANDOM_RANGES, tuningDefaults, tuningRandom, formatKnob, applyStarPalette,
-        readSavedTuning, writeSavedTuning, TUNING_STORAGE_KEY,
+        readSavedTuning, writeSavedTuning, clearSavedTuning, TUNING_STORAGE_KEY,
         galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor, edgesToDraw,
       }
     }

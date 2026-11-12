@@ -10,7 +10,7 @@ import { loadClient } from './harness.mjs'
 const {
   TUNING, RANDOM_RANGES, GALAXY, GALAXY_DEFAULTS, VIEW_DEFAULTS,
   tuningDefaults, tuningRandom, formatKnob, applyStarPalette,
-  readSavedTuning, writeSavedTuning, TUNING_STORAGE_KEY, PALETTE_IDS, STAR_PALETTES,
+  readSavedTuning, writeSavedTuning, clearSavedTuning, TUNING_STORAGE_KEY, PALETTE_IDS, STAR_PALETTES,
 } = loadClient({ test: true }).__test
 
 function seeded(seed) {
@@ -136,10 +136,33 @@ test('存储不可用时不抛异常（隐私模式 / 禁用 localStorage）', (
   globalThis.localStorage = {
     getItem: () => { throw new Error('denied') },
     setItem: () => { throw new Error('denied') },
+    removeItem: () => { throw new Error('denied') },
   }
   try {
     assert.equal(readSavedTuning(), null)
     assert.equal(writeSavedTuning(tuningDefaults()), false)
+    assert.equal(clearSavedTuning(), false)
+  } finally {
+    delete globalThis.localStorage
+  }
+})
+
+test('复位必须清掉本机默认，否则下次打开又回到旧参数', () => {
+  const store = new Map()
+  globalThis.localStorage = {
+    getItem: key => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: key => store.delete(key),
+  }
+  try {
+    const custom = { ...tuningDefaults(), PITCH_DEG: 28, PALETTE: 'ember' }
+    assert.equal(writeSavedTuning(custom), true)
+    assert.equal(readSavedTuning().PITCH_DEG, 28)
+    assert.equal(clearSavedTuning(), true)
+    assert.equal(store.has(TUNING_STORAGE_KEY), false, '复位后 localStorage 仍留着旧默认')
+    assert.equal(readSavedTuning(), null)
+    // 再读一次应回落到出厂值，而不是被清掉的自定义值
+    assert.equal(readSavedTuning() ?? tuningDefaults().PITCH_DEG, GALAXY_DEFAULTS.PITCH_DEG)
   } finally {
     delete globalThis.localStorage
   }
