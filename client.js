@@ -418,7 +418,7 @@ window.__ModuleLoader__.load({
       R: 1.15,
       DISK_R: 1.25,
       R0: 0.12,
-      TAN_I: Math.tan((13 * Math.PI) / 180),
+      TAN_I: Math.tan((20 * Math.PI) / 180),
       H: 0.28,
       BULGE_FRACTION: 0.15,
       BULGE_H: 0.10,
@@ -654,19 +654,42 @@ window.__ModuleLoader__.load({
       }
 
       ctx.clearRect(0, 0, size, size)
+
+      // ---- Pass 1: 弥漫星光（低频）----
+      // 2 万颗 1–2 位图像素的星点直接画出来只是「散落的沙粒」：屏幕覆盖不到 5%，
+      // 而且软高斯 sprite 缩到 2px 时 alpha 几乎全部丢失。真星系的柔光来自未解析的
+      // 星光总量，所以先按同一密度分布铺一层大而极淡的软斑 —— 旋臂的连续结构由这一层
+      // 承担，细节星点由 Pass 2 叠上去。（参数经 1024² 三变体对拍选定）
       ctx.globalCompositeOperation = 'lighter'
-      for (let i = 0; i < points.count; i += 1) {
+      const NEBULA_STEP = 2
+      for (let i = 0; i < points.count; i += NEBULA_STEP) {
         const b = points.bs[i]
-        // 位图像素 ≠ 屏幕像素：暗星只有 2–3 位图像素（靠加性叠成雾），
-        // 亮星必须单独放大到 6–14 位图像素才撑得起结构感。
-        const diameter = b > 0.9 ? 6 + 8 * b : 2 + b
         const red = points.colors[i * 3]
         const green = points.colors[i * 3 + 1]
         const sprite = red === STAR_WARM[0] && green === STAR_WARM[1]
           ? sprites.warm
           : (green === STAR_MAGENTA[1] && red === STAR_MAGENTA[0] ? sprites.magenta : sprites.blue)
         if (!sprite) continue
-        ctx.globalAlpha = 0.20 + 0.80 * b
+        // 亮度不要按半径额外加权：星点密度本身就已经在核心处高得多，
+        // 加性混合会自然叠出中心亮度。再乘一层指数会让核心从盘面里「炸」出来。
+        const diameter = 30 + 36 * b
+        ctx.globalAlpha = 0.030 + 0.026 * b
+        ctx.drawImage(sprite, toPx(points.xs[i]) - diameter / 2, toPx(points.zs[i]) - diameter / 2, diameter, diameter)
+      }
+
+      // ---- Pass 2: 解析出来的星点（高频）----
+      for (let i = 0; i < points.count; i += 1) {
+        const b = points.bs[i]
+        // 位图像素 ≠ 屏幕像素：暗星只有 3 位图像素（靠加性叠成雾），
+        // 亮星必须单独放大到 6–14 位图像素才撑得起结构感。
+        const diameter = b > 0.9 ? 6 + 8 * b : 3 + 3 * b
+        const red = points.colors[i * 3]
+        const green = points.colors[i * 3 + 1]
+        const sprite = red === STAR_WARM[0] && green === STAR_WARM[1]
+          ? sprites.warm
+          : (green === STAR_MAGENTA[1] && red === STAR_MAGENTA[0] ? sprites.magenta : sprites.blue)
+        if (!sprite) continue
+        ctx.globalAlpha = 0.30 + 0.70 * b
         const half = diameter / 2
         ctx.drawImage(sprite, toPx(points.xs[i]) - half, toPx(points.zs[i]) - half, diameter, diameter)
       }
@@ -697,6 +720,16 @@ window.__ModuleLoader__.load({
       ctx.globalCompositeOperation = 'source-over'
       ctx.globalAlpha = 1
       return canvas
+    }
+
+    // 深度调制：正交投影下 scale 不含深度项，远近只能靠显式系数表达。
+    // 加性混合下绘制顺序在视觉上是可交换的，所以排序不是层次来源 —— 这里必须显式做。
+    function depthFactor(depth, zMin, zMax) {
+      const span = zMax - zMin
+      let k = span > 1e-6 ? (Number(depth) - zMin) / span : 0
+      if (!Number.isFinite(k)) k = 0
+      k = Math.max(0, Math.min(1, k))
+      return { r: 0.80 + 0.45 * (1 - k), a: 0.70 + 0.35 * (1 - k) }
     }
 
     class NeuronRenderer {
@@ -753,6 +786,7 @@ window.__ModuleLoader__.load({
         }
         window.addEventListener('resize', this._onResize)
         this.resize()
+        this.ensureDisk()
         this.start()
       }
 
@@ -815,7 +849,24 @@ window.__ModuleLoader__.load({
 
       setScheme(scheme) {
         this.scheme = scheme === 'light' ? 'light' : 'dark'
-        this.dust = null
+      }
+
+      /**
+       * 盘面位图只在首次挂载 + DPR 变化 时重建；旋转/缩放/resize/主题切换一律不重建。
+       * 生成放在 idle 里，期间背景与核球照常绘制，不会白屏。
+       */
+      ensureDisk() {
+        const dpr = Math.min(2, window.devicePixelRatio || 1)
+        if (this.disk && this.disk.dpr === dpr) return
+        if (this._diskScheduled) return
+        this._diskScheduled = true
+        const build = () => {
+          this._diskScheduled = false
+          const bitmap = renderDiskBitmap(generateDiskPoints(Math.random))
+          if (bitmap) this.disk = { bitmap, dpr }
+        }
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(build, { timeout: 1500 })
+        else setTimeout(build, 0)
       }
 
       setGraph(graph) {
@@ -983,111 +1034,65 @@ window.__ModuleLoader__.load({
 
       draw(now) {
         const ctx = this.ctx
-        const { bg, brand, label } = this.palette
-        const light = this.scheme === 'light'
-        ctx.clearRect(0, 0, this.w, this.h)
-        // 背景：跟随 DSH 外观主题。深色=深空银河；浅色=白日星云（米白底 + 淡蓝/淡金气团）。
+        const { brand } = this.palette
+        const dpr = Math.min(2, window.devicePixelRatio || 1)
+        const panX = this.camera.panX
+        const panY = this.camera.panY
         const cx = this.w / 2
-        const cy = this.h * 0.48
+        const cy = this.h / 2
         const reach = Math.max(this.w, this.h) * 0.78
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 1
+        ctx.clearRect(0, 0, this.w, this.h)
+
+        // 画布恒为深空（已与用户裁决）：浅色主题只改面板/标签/边框，不做画布反极性。
+        // 加性混合的星点在白底上会烧成一片白，天文照片本身也是黑底。
         const space = ctx.createRadialGradient(cx, cy, 0, cx, cy, reach)
-        if (light) {
-          space.addColorStop(0, 'rgba(222,234,255,0.95)')
-          space.addColorStop(0.42, 'rgba(240,245,253,0.98)')
-          space.addColorStop(1, '#f6f9ff')
-        } else {
-          space.addColorStop(0, 'rgba(22,32,58,0.98)')
-          space.addColorStop(0.42, 'rgba(9,13,26,0.99)')
-          space.addColorStop(1, '#04060f')
-        }
+        space.addColorStop(0, 'rgba(21,30,56,0.98)')
+        space.addColorStop(0.42, 'rgba(8,12,24,0.99)')
+        space.addColorStop(1, '#04060f')
         ctx.fillStyle = space
         ctx.fillRect(0, 0, this.w, this.h)
 
-        // 核心核球：仿星系中心（深色暖金 / 浅色淡金）
+        // 核球外围的大面积柔光（星点本体在盘面位图里）
         const coreR = Math.max(110, Math.min(this.w, this.h) * 0.42)
         const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
-        if (light) {
-          core.addColorStop(0, 'rgba(255,224,158,0.30)')
-          core.addColorStop(0.12, 'rgba(255,214,140,0.18)')
-          core.addColorStop(0.34, 'rgba(255,203,128,0.09)')
-          core.addColorStop(0.7, 'rgba(255,196,130,0.03)')
-          core.addColorStop(1, 'rgba(255,196,130,0)')
-        } else {
-          core.addColorStop(0, 'rgba(255,246,225,0.16)')
-          core.addColorStop(0.12, 'rgba(255,232,190,0.09)')
-          core.addColorStop(0.34, 'rgba(255,205,140,0.035)')
-          core.addColorStop(0.7, 'rgba(240,180,120,0.014)')
-          core.addColorStop(1, 'rgba(255,190,120,0)')
-        }
+        core.addColorStop(0, 'rgba(255,246,225,0.16)')
+        core.addColorStop(0.12, 'rgba(255,232,190,0.09)')
+        core.addColorStop(0.34, 'rgba(255,205,140,0.035)')
+        core.addColorStop(0.7, 'rgba(240,180,120,0.014)')
+        core.addColorStop(1, 'rgba(255,190,120,0)')
         ctx.fillStyle = core
         ctx.beginPath()
         ctx.arc(cx, cy, coreR, 0, Math.PI * 2)
         ctx.fill()
 
-        // 旋臂薄雾
-        this.armPhase = (this.armPhase ?? 0)
-        ctx.globalCompositeOperation = light ? 'source-over' : 'lighter'
-        const ARMS = 3
-        for (let pass = 0; pass < 2; pass++) {
-          ctx.globalAlpha = light ? (pass === 0 ? 0.16 : 0.10) : (pass === 0 ? 0.042 : 0.024)
-          ctx.strokeStyle = pass === 0
-            ? (light ? 'rgba(96,140,255,1)' : 'rgba(140,180,255,1)')
-            : (light ? 'rgba(236,140,190,1)' : 'rgba(255,170,205,1)')
-          ctx.lineWidth = pass === 0 ? Math.max(24, this.w * 0.042) : Math.max(9, this.w * 0.015)
-          ctx.lineCap = 'round'
-          for (let a = 0; a < ARMS; a++) {
-            ctx.beginPath()
-            for (let i = 0; i <= 72; i++) {
-              const rr = 0.12 + (i / 72) * 0.92
-              const rad = Math.min(this.w, this.h) * 0.52 * rr
-              const th = (a / ARMS) * Math.PI * 2 - 2.5 * Math.log(rr * 6 + 1) + this.armPhase
-              const px = cx + Math.cos(th) * rad
-              const py = cy + Math.sin(th) * rad * 0.42
-              i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)
-            }
-            ctx.stroke()
-          }
+        // ---- 盘面位图：一次 drawImage 贴上去 ----
+        // 相机中心是 this.h/2（与 project() 一致）。上方 cx/cy 里的 cy 也已是 h/2；
+        // 绝不能退回旧 draw() 的 h*0.48，那会让盘面相对节点下沉 0.02h。
+        if (this.disk) {
+          const { yaw, pitch, zoom } = this.camera
+          const cosY = Math.cos(yaw)
+          const sinY = Math.sin(yaw)
+          const cosP = Math.cos(pitch)
+          const sinP = Math.sin(pitch)
+          const s = zoom * (this.fit || 1)
+          // 先恢复 DPR 基准再叠加相机矩阵，否则 dpr=2 时盘面只有节点一半大。
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          ctx.transform(cosY * s, -sinY * sinP * s, -sinY * s, -cosY * sinP * s, cx + panX, cy + panY)
+          ctx.globalCompositeOperation = 'lighter'
+          ctx.drawImage(this.disk.bitmap, -GALAXY.DISK_R, -GALAXY.DISK_R, 2 * GALAXY.DISK_R, 2 * GALAXY.DISK_R)
+          ctx.globalCompositeOperation = 'source-over'
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
         }
-
-        // 星尘：确定性分布，缓慢自转
-        if (!this.dust || this.dust.w !== this.w || this.dust.h !== this.h) {
-          let seed = 20261110
-          const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296 }
-          const count = Math.min(520, Math.round(this.w * this.h / 2600))
-          const list = []
-          for (let i = 0; i < count; i++) {
-            const radius = Math.pow(rnd(), 0.62) * Math.min(this.w, this.h) * 0.62
-            list.push({ r: radius, a: rnd() * Math.PI * 2, s: 0.35 + rnd() * 1.15, o: 0.16 + rnd() * 0.6, warm: rnd() > 0.72 })
-          }
-          this.dust = { w: this.w, h: this.h, list }
-        }
-        ctx.globalAlpha = 1
-        for (const d of this.dust.list) {
-          const th = d.a + this.armPhase * 0.6
-          const px = cx + Math.cos(th) * d.r
-          const py = cy + Math.sin(th) * d.r * 0.42
-          ctx.globalAlpha = d.o * (0.55 + 0.45 * Math.sin(this.pulsePhase * 6.28 + d.a * 3)) * (light ? 0.55 : 1)
-          ctx.fillStyle = light
-            ? (d.warm ? 'rgba(196,142,52,1)' : 'rgba(96,132,196,1)')
-            : (d.warm ? 'rgba(255,226,186,1)' : 'rgba(190,214,255,1)')
-          ctx.fillRect(px, py, d.s, d.s)
-        }
-        ctx.globalCompositeOperation = 'source-over'
-
-        // 暗角（浅色下改为轻微收边，避免压脏）
-        const vignette = ctx.createRadialGradient(cx, cy, reach * 0.30, cx, cy, reach)
-        vignette.addColorStop(0, 'rgba(0,0,0,0)')
-        vignette.addColorStop(1, light ? 'rgba(96,120,168,0.16)' : 'rgba(0,2,8,0.72)')
-        ctx.fillStyle = vignette
-        ctx.fillRect(0, 0, this.w, this.h)
-        ctx.globalAlpha = 1
 
         const projected = new Map()
         for (const node of this.nodes) projected.set(node.id, this.project(node))
 
         const focusSet = this.focus === null ? null : new Set([this.focus, ...(this.adj.get(this.focus) ?? [])])
         const selectedSet = this.selected === null ? null : new Set([this.selected, ...(this.adj.get(this.selected) ?? [])])
-        const highlight = selectedSet ?? focusSet
+        const hoverSet = this.hover === null ? null : new Set([this.hover, ...(this.adj.get(this.hover) ?? [])])
+        const highlight = selectedSet ?? focusSet ?? hoverSet
 
         // ---- 边 ----
         const edgeList = this.edges
@@ -1107,7 +1112,6 @@ window.__ModuleLoader__.load({
           const dimmed = highlight !== null && !isConnected
           const weight = Math.min(1, (edge.weight || 1) / this.maxWeight)
           let alpha = (edge.type === 'co-occurrence' ? 0.06 : 0.13) + weight * 0.42
-          alpha *= Math.min(1, (pa.scale + pb.scale) / 1.6)
           if (edge.type === 'topic') alpha *= 0.5
           if (dimmed) alpha *= 0.14
           if (isConnected) alpha = Math.min(0.8, alpha * 1.7)
@@ -1144,50 +1148,52 @@ window.__ModuleLoader__.load({
           .map(node => ({ node, p: projected.get(node.id), alpha: this.nodeAlpha(node) }))
           .sort((a, b) => a.p.depth - b.p.depth)
 
+        // 深度范围必须先算出来：正交投影下 scale 不含深度项，
+        // 远近只能靠显式系数表达（加性混合下绘制顺序在视觉上是可交换的）。
+        let zMin = Infinity
+        let zMax = -Infinity
+        for (const item of drawNodes) {
+          if (item.p.depth < zMin) zMin = item.p.depth
+          if (item.p.depth > zMax) zMax = item.p.depth
+        }
+
         const labelQueue = []
         for (const item of drawNodes) {
           const { node, p } = item
           const isSelected = node.id === this.selected
           const isFocus = node.id === this.focus
           const dimmed = highlight !== null && !highlight.has(node.id)
+          const depth = depthFactor(p.depth, zMin, zMax)
           let alpha = item.alpha
           if (dimmed) alpha *= 0.22
+          alpha *= depth.a
           const searched = this.view.search.trim() !== ''
           if (searched) {
             const hit = String(node.label ?? '').toLowerCase().includes(this.view.search.trim().toLowerCase())
             alpha = hit ? Math.min(1, alpha + 0.3) : alpha * 0.2
           }
-          // 透视只做弱缩放：scale 在整图 fit 后会很小（本视图约 0.27），
-          // 若线性相乘，所有节点都会退化成 1px 光点 —— 这里改为开方压缩 + 上下限。
-          const persp = Math.max(0.62, Math.min(1.9, Math.sqrt(Math.max(0.02, p.scale)) * 1.1))
-          const radius = Math.max(1.4, node.r * persp)
+          const radius = Math.max(1.4, node.r * depth.r)
           const glowRadius = radius * (isSelected ? Math.min(7, this.view.glow * 1.9) : Math.min(5.2, this.view.glow * 1.05))
           const color = node.color || TIER_COLOR.regular
 
-          if (node.type !== 'topic' || isSelected) {
-            const halo = ctx.createRadialGradient(p.sx, p.sy, radius * 0.2, p.sx, p.sy, glowRadius)
-            halo.addColorStop(0, this.hexAlpha(color, 0.85 * alpha))
-            halo.addColorStop(0.3, this.hexAlpha(color, 0.34 * alpha))
-            halo.addColorStop(0.62, this.hexAlpha(color, 0.12 * alpha))
-            halo.addColorStop(1, this.hexAlpha(color, 0))
-            ctx.fillStyle = halo
-            ctx.beginPath()
-            ctx.arc(p.sx, p.sy, glowRadius, 0, Math.PI * 2)
-            ctx.fill()
+          // 预渲染 sprite 替代每帧 createRadialGradient（原来的主要 CPU 开销）
+          const sprite = this.spriteFor(color)
+          if (sprite && (node.type !== 'topic' || isSelected)) {
+            ctx.globalCompositeOperation = 'lighter'
+            // 三层：外晕（柔）→ 白核（亮点的「白心」）→ 色缘（色调）。
+            // 亮度收着用：底图已经有两万星点，节点再亮就烧成一片白斑。
+            ctx.globalAlpha = Math.min(1, 0.20 * alpha)
+            ctx.drawImage(sprite, p.sx - glowRadius, p.sy - glowRadius, glowRadius * 2, glowRadius * 2)
+            const bodyR = Math.max(1.2, radius * 1.7)
+            const white = this.spriteFor('#ffffff')
+            if (white) {
+              ctx.globalAlpha = Math.min(1, 0.55 * alpha)
+              ctx.drawImage(white, p.sx - bodyR, p.sy - bodyR, bodyR * 2, bodyR * 2)
+            }
+            ctx.globalAlpha = Math.min(1, 0.42 * alpha)
+            ctx.drawImage(sprite, p.sx - radius, p.sy - radius, radius * 2, radius * 2)
+            ctx.globalCompositeOperation = 'source-over'
           }
-
-          // 恒星本体：亮白核心 -> 颜色外缘
-          const body = ctx.createRadialGradient(
-            p.sx - radius * 0.24, p.sy - radius * 0.24, radius * 0.08,
-            p.sx, p.sy, radius,
-          )
-          body.addColorStop(0, this.hexAlpha('#ffffff', Math.min(1, 1.05 * alpha)))
-          body.addColorStop(0.5, this.hexAlpha(color, Math.min(1, 1.02 * alpha)))
-          body.addColorStop(1, this.hexAlpha(color, 0.55 * alpha))
-          ctx.fillStyle = body
-          ctx.beginPath()
-          ctx.arc(p.sx, p.sy, radius, 0, Math.PI * 2)
-          ctx.fill()
 
           // 十字星芒：只给真正的亮星（核心 / 选中 / 高分），避免满屏光斑
           const bright = node.type === 'self' || isSelected || isFocus || (Number(node.score) || 0) >= 70
@@ -1220,13 +1226,23 @@ window.__ModuleLoader__.load({
             }
           }
 
-          const showLabel = this.view.labels && (node.type === 'self' || radius > 8.5 || isSelected || isFocus)
+          const showLabel = this.view.labels && (node.type === 'self' || radius > 5 || isSelected || isFocus)
           if (showLabel && alpha > 0.3) {
             labelQueue.push({ node, p, radius, alpha, isSelected, color })
           }
         }
 
-        // 标签统一最后画，避免被后续光晕遮盖；简单矩形避让防止重叠
+        // ---- 暗角：必须在节点之后、标签之前 ----
+        // 放在节点之前会把边缘人物的光点压暗；放在标签之后会把名字压掉一半。
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 1
+        const vignette = ctx.createRadialGradient(cx, cy, reach * 0.30, cx, cy, reach)
+        vignette.addColorStop(0, 'rgba(0,0,0,0)')
+        vignette.addColorStop(1, 'rgba(0,2,8,0.72)')
+        ctx.fillStyle = vignette
+        ctx.fillRect(0, 0, this.w, this.h)
+
+        // ---- 标签：最后画，光晕描边代替背景色块 ----
         if (labelQueue.length > 0) {
           labelQueue.sort((a, b) => (b.node.score || 0) - (a.node.score || 0))
           const placed = []
@@ -1246,20 +1262,34 @@ window.__ModuleLoader__.load({
             if (clash && !isSelected && node.type !== 'self') continue
             placed.push([bx, by, bw, bh])
             ctx.globalAlpha = Math.min(0.96, alpha)
-            ctx.fillStyle = this.scheme === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(3,6,14,0.82)'
-            ctx.beginPath()
-            if (typeof ctx.roundRect === 'function') ctx.roundRect(bx, by, bw, bh, 4)
-            else ctx.rect(bx, by, bw, bh)
-            ctx.fill()
-            ctx.fillStyle = this.scheme === 'light'
-              ? (node.type === 'self' ? '#7a4a00' : (node.type === 'topic' ? '#a3216a' : '#2b3a52'))
-              : (node.type === 'self' ? '#fff8e6' : (node.type === 'topic' ? this.hexAlpha('#ffd7ee', 1) : '#dfe9fb'))
+            ctx.shadowColor = 'rgba(2,4,10,0.92)'
+            ctx.shadowBlur = 6
+            ctx.fillStyle = node.type === 'self' ? '#fff8e6' : (node.type === 'topic' ? '#ffd7ee' : '#dfe9fb')
             ctx.fillText(text, p.sx, by + 1.5)
+            ctx.shadowBlur = 0
+            ctx.shadowColor = 'rgba(0,0,0,0)'
             ctx.globalAlpha = 1
           }
         }
       }
 
+      /** 同色 sprite 复用，避免每帧 createRadialGradient。 */
+      spriteFor(hex) {
+        if (!this.sprites) this.sprites = new Map()
+        const key = typeof hex === 'string' && hex.startsWith('#') ? hex : '#ffffff'
+        const cached = this.sprites.get(key)
+        if (cached) return cached
+        const clean = key.slice(1)
+        const value = clean.length === 3 ? clean.split('').map(char => char + char).join('') : clean
+        const rgb = [
+          parseInt(value.slice(0, 2), 16) || 255,
+          parseInt(value.slice(2, 4), 16) || 255,
+          parseInt(value.slice(4, 6), 16) || 255,
+        ]
+        const sprite = makeStarSprite(rgb, 32)
+        if (sprite) this.sprites.set(key, sprite)
+        return sprite
+      }
       hexAlpha(hex, alpha) {
         if (typeof hex !== 'string') return `rgba(120,160,255,${alpha})`
         if (hex.startsWith('rgb')) return hex
@@ -1728,7 +1758,8 @@ window.__ModuleLoader__.load({
       const [playing, setPlaying] = useState(false)
       const [view, setView] = useState({
         showTopics: true, showGroups: true, showCooccurrence: true,
-        minTier: 'weak', pulse: true, glow: 6, autoRotate: true, labels: true,
+        minTier: 'weak', pulse: true, glow: 6, labels: true,
+        autoRotate: !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
       })
 
       // 外观主题必须在任何依赖它的渲染/依赖数组之前取值（否则触发 TDZ）
@@ -2149,7 +2180,7 @@ window.__ModuleLoader__.load({
     }
 
     if (globalThis.__WNEUR_TEST__ === true) {
-      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite }
+      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor }
     }
 
     return exported
