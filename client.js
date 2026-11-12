@@ -34,14 +34,6 @@ window.__ModuleLoader__.load({
       initiation: '对方主动', depth: '内容深度', intimacy: '亲密度',
     }
     const METRIC_WEIGHT = { recency: 0.30, frequency: 0.22, reciprocity: 0.16, initiation: 0.12, depth: 0.10, intimacy: 0.10 }
-    const LAYOUTS = [
-      { id: 'galaxy', label: '银河', hint: '旋臂围绕核心展开' },
-      { id: 'sphere', label: '球体', hint: '按重要度分层球壳' },
-      { id: 'helix', label: '时间螺旋', hint: '越近的越靠上' },
-      { id: 'cluster', label: '类型星团', hint: '人 / 群 / 话题分簇' },
-      { id: 'radial', label: '放射', hint: '重要度决定半径' },
-      { id: 'force', label: '力导向', hint: '实时物理模拟' },
-    ]
 
     /* ------------------------------------------------------------------ *
      * 样式
@@ -446,6 +438,13 @@ window.__ModuleLoader__.load({
         h ^= str.charCodeAt(i)
         h = Math.imul(h, 0x01000193) >>> 0
       }
+      // FNV-1a 的末尾雪崩很弱：'p0'/'p1' 这类只差最后一位的 id 只差几个低位，
+      // 归一化后几乎同值（实测 20 个顺序 id 全被挤到 0.60±0.03）。补 murmu3 终混。
+      h ^= h >>> 16
+      h = Math.imul(h, 0x85ebca6b) >>> 0
+      h ^= h >>> 13
+      h = Math.imul(h, 0xc2b2ae35) >>> 0
+      h ^= h >>> 16
       return (h >>> 0) / 4294967296
     }
 
@@ -484,6 +483,59 @@ window.__ModuleLoader__.load({
       },
     }
 
+    /**
+     * 星系单布局：把节点落位成一张薄盘。
+     * 纯函数——同输入同输出，不读 this，便于测试与重排。
+     * 高分节点（>= S60）贴旋臂构成结构骨架；低分节点铺进弥散盘，避免「糊成实心带」。
+     */
+    function layoutGalaxyTargets(nodes, rng) {
+      const targets = new Map()
+      const list = Array.isArray(nodes) ? nodes : []
+      const random = typeof rng === 'function' ? rng : Math.random
+
+      const people = list.filter(node => node.type === 'person' || node.type === 'group')
+      const topics = list.filter(node => node.type === 'topic')
+      const self = list.find(node => node.type === 'self')
+      if (self) targets.set(self.id, [0, 0, 0])
+
+      // S60：可见 person/group 分数的第 60 百分位，分开「骨干」与「尘埃」
+      const scores = people.map(node => safeScore(node.score)).sort((a, b) => a - b)
+      const s60 = scores.length === 0 ? 0 : scores[Math.floor(scores.length * 0.6)]
+      const load = [0, 0, 0, 0]
+      const ordered = [...people].sort((a, b) => safeScore(b.score) - safeScore(a.score) || String(a.id).localeCompare(String(b.id)))
+
+      for (const node of ordered) {
+        const score = safeScore(node.score)
+        let r = galaxyMath.nodePolarRadius(score)
+        let theta
+        if (score >= s60 && people.length > 1) {
+          // 防重叠：挑当前承载最少的臂，再在臂内做有界抖动；hash 保证确定性。
+          // 抖动必须与节点数无关——0.075×承载数在 2000 节点时会累到几十弧度，
+          // 旋臂会被彻底抹平；这里用「承载数取模」把它固定在 ±0.15 rad 内。
+          let pick = 0
+          for (let i = 1; i < load.length; i += 1) if (load[i] < load[pick]) pick = i
+          load[pick] += 1
+          const spread = ((load[pick] % 5) - 2) * 0.05
+          theta = galaxyMath.armAngle(pick, r) + spread + (hash01(node.id) - 0.5) * 0.05
+        } else {
+          // 弱连接：均匀铺满盘面，半径再抖 0.75–1.25 倍，形成弥散星云而非实心环
+          theta = hash01(node.id) * Math.PI * 2
+          r *= 0.75 + 0.5 * hash01(`${node.id}r`)
+        }
+        let y = gauss(random, 0.055 * Math.sqrt(Math.max(0, r)))
+        if (node.type === 'group') y += 0.06
+        targets.set(node.id, [Math.cos(theta) * r, y, Math.sin(theta) * r])
+      }
+
+      for (const node of topics) {
+        const r = 0.85 + 0.30 * hash01(node.id)
+        const theta = hash01(`${node.id}t`) * Math.PI * 2
+        targets.set(node.id, [Math.cos(theta) * r, -0.04, Math.sin(theta) * r])
+      }
+
+      return targets
+    }
+
     class NeuronRenderer {
       constructor(canvas, handlers) {
         this.canvas = canvas
@@ -510,7 +562,7 @@ window.__ModuleLoader__.load({
         this.blend = 0
         this.pulsePhase = 0
         this.view = {
-          layout: 'galaxy', showTopics: true, showGroups: true, showCooccurrence: true,
+          showTopics: true, showGroups: true, showCooccurrence: true,
           minTier: 'weak', pulse: true, glow: 6, autoRotate: true, labels: true,
           search: '', timeIndex: -1, highlightOnly: false,
         }
@@ -632,7 +684,7 @@ window.__ModuleLoader__.load({
         }
         this.maxWeight = this.edges.reduce((max, edge) => Math.max(max, edge.weight || 1), 1)
         this.spread()
-        this.applyLayout(this.view.layout)
+        this.applyLayout()
         this.alpha = 1
         this.start()
       }
@@ -675,120 +727,18 @@ window.__ModuleLoader__.load({
         return true
       }
 
-      applyLayout(layout) {
-        this.view.layout = layout
-        this.targets = new Map()
-        const visible = this.nodes.filter(node => node.type !== 'settled')
-        const people = visible.filter(node => node.type === 'person' || node.type === 'group' || node.type === 'self')
-        const topics = visible.filter(node => node.type === 'topic')
-        const radiusByTier = { core: 150, friend: 220, regular: 290, weak: 360, silent: 410 }
-
-        if (layout === 'galaxy') {
-          // 银河：核心（我）居中，重要的人靠近核心，其余沿旋臂铺开；话题沉到盘面下方作为星尘
-          const ARMS = 3
-          const ordered = [...people].filter(node => node.type !== 'self')
-            .sort((a, b) => (b.score || 0) - (a.score || 0))
-          ordered.forEach((node, index) => {
-            const t = ordered.length === 1 ? 0 : index / (ordered.length - 1)
-            // 重要度 -> 半径：核心附近密集，外圈稀疏
-            const radius = 150 + Math.pow(t, 0.62) * 560 + (node.type === 'group' ? 40 : 0)
-            const arm = index % ARMS
-            const base = (arm / ARMS) * Math.PI * 2
-            const theta = base - 2.4 * Math.log(radius / 100 + 1) + index * 0.06
-            const wobble = 1 + Math.sin(index * 2.3) * 0.10
-            this.targets.set(node.id, [
-              Math.cos(theta) * radius * wobble,
-              Math.sin(index * 1.7) * 46 * (1 - t * 0.55) + (node.type === 'group' ? -34 : 0),
-              Math.sin(theta) * radius * wobble,
-            ])
-          })
-          this.targets.set('s', [0, 0, 0])
-          topics.forEach((node, index) => {
-            const theta = (index / Math.max(1, topics.length)) * Math.PI * 2 * 1.7
-            const radius = 300 + (index % 5) * 82
-            this.targets.set(node.id, [
-              Math.cos(theta) * radius,
-              -90 - (index % 4) * 46,
-              Math.sin(theta) * radius,
-            ])
-          })
-          this.blend = 1
-        } else if (layout === 'sphere' || layout === 'force') {
-          const ordered = [...people].sort((a, b) => (this.tierRank(a.tier) - this.tierRank(b.tier)) || (b.score - a.score))
-          ordered.forEach((node, index) => {
-            const radius = node.type === 'self' ? 0 : (radiusByTier[node.tier] ?? 380)
-            const count = Math.max(1, ordered.length - 1)
-            const t = count === 1 ? 0 : index / (count - 1)
-            const y = 1 - 2 * t
-            const ring = Math.sqrt(Math.max(0, 1 - y * y))
-            const theta = Math.PI * (3 - Math.sqrt(5)) * index
-            this.targets.set(node.id, [
-              Math.cos(theta) * ring * radius,
-              y * radius * 0.86,
-              Math.sin(theta) * ring * radius,
-            ])
-          })
-          this.blend = layout === 'sphere' ? 1 : 0
-        } else if (layout === 'helix') {
-          const times = people.filter(node => node.stats?.lastTime).map(node => Date.parse(node.stats.lastTime))
-          const min = times.length > 0 ? Math.min(...times) : Date.now() - 365 * 86400000
-          const max = times.length > 0 ? Math.max(...times) : Date.now()
-          people.forEach((node, index) => {
-            const time = node.stats?.lastTime ? Date.parse(node.stats.lastTime) : min
-            const t = max === min ? 0.5 : (time - min) / (max - min)
-            const theta = t * Math.PI * 5 + index * 0.12
-            const radius = node.type === 'self' ? 0 : 250
-            this.targets.set(node.id, [Math.cos(theta) * radius, -300 + t * 600, Math.sin(theta) * radius])
-          })
-          this.blend = 1
-        } else if (layout === 'cluster') {
-          const centers = {
-            self: [0, 0, 0],
-            person: [-150, 0, 0],
-            group: [170, -60, 90],
-            topic: [30, 170, -140],
-          }
-          const grouped = { self: [], person: [], group: [], topic: [] }
-          for (const node of visible) (grouped[node.type] ?? grouped.person).push(node)
-          for (const [type, list] of Object.entries(grouped)) {
-            const center = centers[type] ?? [0, 0, 0]
-            const radius = type === 'person' ? 180 : type === 'topic' ? 120 : 96
-            list.forEach((node, index) => {
-              const golden = Math.PI * (3 - Math.sqrt(5))
-              const y = list.length === 1 ? 0 : 1 - 2 * (index / (list.length - 1))
-              const ring = Math.sqrt(Math.max(0, 1 - y * y))
-              const theta = golden * index
-              this.targets.set(node.id, [
-                center[0] + Math.cos(theta) * ring * radius,
-                center[1] + y * radius,
-                center[2] + Math.sin(theta) * ring * radius,
-              ])
-            })
-          }
-          this.blend = 1
-        } else if (layout === 'radial') {
-          const ordered = [...people].sort((a, b) => b.score - a.score)
-          ordered.forEach((node, index) => {
-            const radius = node.type === 'self' ? 0 : 120 + (1 - (node.score || 0) / 100) * 300
-            const theta = (index / Math.max(1, ordered.length)) * Math.PI * 2
-            this.targets.set(node.id, [Math.cos(theta) * radius, Math.sin(theta) * radius * 0.62, (index % 7 - 3) * 24])
-          })
-          this.blend = 1
-        }
-        if (topics.length > 0 && layout !== 'cluster') {
-          topics.forEach((node, index) => {
-            const theta = (index / Math.max(1, topics.length)) * Math.PI * 2
-            this.targets.set(node.id, [Math.cos(theta) * 430, 260 + Math.sin(index * 1.7) * 40, Math.sin(theta) * 430])
-          })
-        }
-        if (this.blend > 0) this.alpha = Math.max(this.alpha, 0.35)
+      /**
+       * 星系单布局：目标位置全部由 layoutGalaxyTargets 决定，这里只做落地与过渡。
+       */
+      applyLayout() {
+        this.targets = layoutGalaxyTargets(this.nodes, Math.random)
+        this.blend = 1
+        this.alpha = Math.max(this.alpha, 0.35)
         this.computeFit()
       }
 
       setView(patch) {
-        const previousLayout = this.view.layout
         Object.assign(this.view, patch)
-        if (patch.layout !== undefined && patch.layout !== previousLayout) this.applyLayout(patch.layout)
         if (patch.timeIndex !== undefined) this.alpha = Math.max(this.alpha, 0.2)
       }
 
@@ -813,77 +763,18 @@ window.__ModuleLoader__.load({
       }
 
       /* -------- 物理 -------- */
-      simulate(dt) {
-        // 非力导向布局：始终追随布局目标，物理不接管，保证构图稳定
-        const pinned = this.view.layout !== 'force' && this.targets !== null
-        if (this.blend > 0 || pinned) {
-          if (this.blend > 0) this.blend = Math.max(0, this.blend - 0.022)
-          const ease = this.blend > 0 ? 0.09 : 0.06
-          for (const node of this.nodes) {
-            const target = this.targets?.get(node.id)
-            if (target === undefined) continue
-            node.x += (target[0] - node.x) * ease
-            node.y += (target[1] - node.y) * ease
-            node.z += (target[2] - node.z) * ease
-          }
-          return
+      simulate() {
+        // 单布局：始终追随星系目标位置，物理不接管，保证构图稳定
+        if (this.targets === null) return
+        if (this.blend > 0) this.blend = Math.max(0, this.blend - 0.022)
+        const ease = this.blend > 0 ? 0.09 : 0.06
+        for (const node of this.nodes) {
+          const target = this.targets?.get(node.id)
+          if (target === undefined) continue
+          node.x += (target[0] - node.x) * ease
+          node.y += (target[1] - node.y) * ease
+          node.z += (target[2] - node.z) * ease
         }
-        if (this.alpha < 0.02) return
-        const nodes = this.nodes.filter(node => this.visible(node))
-        const alpha = this.alpha
-        for (let i = 0; i < nodes.length; i += 1) {
-          const a = nodes[i]
-          for (let j = i + 1; j < nodes.length; j += 1) {
-            const b = nodes[j]
-            let dx = b.x - a.x
-            let dy = b.y - a.y
-            let dz = b.z - a.z
-            let distance2 = dx * dx + dy * dy + dz * dz
-            if (distance2 < 1) { distance2 = 1; dx = Math.random() - 0.5; dy = Math.random() - 0.5; dz = Math.random() - 0.5 }
-            const distance = Math.sqrt(distance2)
-            const repel = (a.type === 'topic' || b.type === 'topic' ? 260 : 900) * alpha / distance2
-            const fx = (dx / distance) * repel
-            const fy = (dy / distance) * repel
-            const fz = (dz / distance) * repel
-            a.vx -= fx; a.vy -= fy; a.vz -= fz
-            b.vx += fx; b.vy += fy; b.vz += fz
-          }
-          const pull = a.type === 'self' ? 0.02 : 0.004
-          a.vx -= a.x * pull; a.vy -= a.y * pull; a.vz -= a.z * pull
-        }
-        for (const edge of this.edges) {
-          const length = edge.type === 'chat' ? 90 + (1 - Math.min(1, edge.weight / this.maxWeight)) * 90
-            : edge.type === 'group-member' ? 130
-              : edge.type === 'topic' ? 70 : 150
-          const dx = edge.b.x - edge.a.x
-          const dy = edge.b.y - edge.a.y
-          const dz = edge.b.z - edge.a.z
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1
-          const k = (edge.type === 'topic' ? 0.014 : 0.008) * alpha
-          const force = (distance - length) * k
-          const fx = (dx / distance) * force
-          const fy = (dy / distance) * force
-          const fz = (dz / distance) * force
-          edge.a.vx += fx; edge.a.vy += fy; edge.a.vz += fz
-          edge.b.vx -= fx; edge.b.vy -= fy; edge.b.vz -= fz
-        }
-        const ceiling = 1200
-        for (const node of nodes) {
-          if (node.type === 'self') { node.x = 0; node.y = 0; node.z = 0; node.vx = node.vy = node.vz = 0; continue }
-          node.vx = Math.max(-8, Math.min(8, node.vx * 0.88))
-          node.vy = Math.max(-8, Math.min(8, node.vy * 0.88))
-          node.vz = Math.max(-8, Math.min(8, node.vz * 0.88))
-          node.x += node.vx * dt * 60
-          node.y += node.vy * dt * 60
-          node.z += node.vz * dt * 60
-          const radius = Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z)
-          if (radius > ceiling) {
-            const scale = ceiling / radius
-            node.x *= scale; node.y *= scale; node.z *= scale
-            node.vx *= 0.5; node.vy *= 0.5; node.vz *= 0.5
-          }
-        }
-        this.alpha *= 0.985
       }
 
       project(node) {
@@ -1319,7 +1210,7 @@ window.__ModuleLoader__.load({
       reset() {
         this.camera = { yaw: 0.62, pitch: -0.58, zoom: 1.2, panX: 0, panY: 0 }
         this.alpha = 1
-        this.applyLayout(this.view.layout)
+        this.applyLayout()
       }
     }
 
@@ -1673,7 +1564,7 @@ window.__ModuleLoader__.load({
       const [timeIndex, setTimeIndex] = useState(-1)
       const [playing, setPlaying] = useState(false)
       const [view, setView] = useState({
-        layout: 'galaxy', showTopics: true, showGroups: true, showCooccurrence: true,
+        showTopics: true, showGroups: true, showCooccurrence: true,
         minTier: 'weak', pulse: true, glow: 6, autoRotate: true, labels: true,
       })
 
@@ -1923,14 +1814,6 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wneur-main' },
           h('div', { className: 'wneur-rail' },
             h('div', { className: 'wneur-card' },
-              h('h3', null, '布局'),
-              h('div', { className: 'wneur-seg', style: { gridTemplateColumns: '1fr 1fr' } },
-                LAYOUTS.map(layout => h('button', {
-                  key: layout.id, title: layout.hint,
-                  'aria-pressed': view.layout === layout.id,
-                  onClick: () => patchView({ layout: layout.id }),
-                }, layout.label)))),
-            h('div', { className: 'wneur-card' },
               h('h3', null, '重要度分层'),
               TIERS.filter(tier => tier.id !== 'topic').map(tier => h('label', { className: 'wneur-check', key: tier.id },
                 h('input', {
@@ -2103,7 +1986,7 @@ window.__ModuleLoader__.load({
     }
 
     if (globalThis.__WNEUR_TEST__ === true) {
-      exported.__test = { NeuronRenderer, GALAXY, galaxyMath }
+      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets }
     }
 
     return exported

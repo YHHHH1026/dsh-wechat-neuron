@@ -59,3 +59,13 @@ test('hash01 确定且在 [0,1)', () => {
   }
   assert.notEqual(M.hash01('p_0001'), M.hash01('p_0002'))
 })
+
+test('hash01 对顺序 id 也要雪崩（否则节点全挤在一个角度）', () => {
+  const buckets = new Array(10).fill(0)
+  const n = 1000
+  for (let i = 0; i < n; i += 1) buckets[Math.floor(M.hash01(`p${i}`) * 10)] += 1
+  // 每桶期望 100，允许 ±50% 波动；纯 FNV-1a 会全部落进同一两桶
+  for (const [index, count] of buckets.entries()) {
+    assert.ok(count > 50 && count < 150, `bucket ${index} = ${count}`)
+  }
+})
