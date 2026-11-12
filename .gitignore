@@ -1,0 +1,19 @@
+node_modules/
+.tools/
+ref/
+*.log
+.DS_Store
+Thumbs.db
+
+# 迭代备份，不进仓库也不进 npm 包
+*.bak-*
+
+# 临时探针 / 抓取产物
+.tmp*
+*.tgz
+t1.txt
+logs.txt
+main-config.jsonc
+
+# Agent 本地记忆（含个人数据，绝不入库）
+.mnemon/

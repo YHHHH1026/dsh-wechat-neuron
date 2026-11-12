@@ -1,0 +1,74 @@
+{
+  "name": "dsh-wechat-neuron",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "WeChat Neuron — 把本机微信聊天记录整理成神经元风格的动态 3D 关系图谱（DSH 插件，仅 Windows）",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib/**/*.js",
+    "!lib/**/*.bak-*",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "NOTICE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": "^22.15.0 || ^23.8.0 || >=24.0.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
+  "os": [
+    "win32"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.2-rc.1 <0.3.0-0",
+    "react": "^18.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "wechat",
+    "weixin",
+    "sqlcipher",
+    "3d",
+    "graph",
+    "neuron",
+    "windows"
+  ],
+  "license": "MIT",
+  "author": "YHHHH",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YHHHH1026/dsh-wechat-neuron.git"
+  },
+  "homepage": "https://github.com/YHHHH1026/dsh-wechat-neuron#readme",
+  "bugs": {
+    "url": "https://github.com/YHHHH1026/dsh-wechat-neuron/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

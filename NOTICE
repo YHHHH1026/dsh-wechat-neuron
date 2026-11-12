@@ -1,0 +1,41 @@
+dsh-wechat-neuron
+Copyright (c) 2026 YHHHH
+
+This product includes algorithmic knowledge derived from third-party work.
+
+----------------------------------------------------------------------------
+wechatauto-replica 1.2.8.0
+----------------------------------------------------------------------------
+Licensed under the Apache License, Version 2.0.
+Source: https://pypi.org/project/wechatauto-replica/1.2.8.0/
+
+The targeted key-extraction approach implemented in lib/host/cipherkey.js
+(the "com.Tencent.WCDB.Config.Cipher" pointer-chain walk, the 32-byte XOR
+mask used to decode the cipher-config blob, and the page-1 HMAC verification
+scheme) was derived by studying wechatauto/db.py, specifically
+_collect_key_candidates, _keys_from_candidates and _verify_enc_key.
+
+No source code was copied. lib/host/cipherkey.js is an independent
+implementation: the memory-reading layer is written in C# (invoked through
+PowerShell Add-Type) rather than Python/ctypes, and key verification reuses
+this project's own pre-existing crypto.js oracle. Only the algorithm,
+structure offsets and constants are shared.
+
+Apache License 2.0 text: https://www.apache.org/licenses/LICENSE-2.0
+
+----------------------------------------------------------------------------
+Other references (ideas only, no code used)
+----------------------------------------------------------------------------
+The following projects informed the investigation. Their code was NOT used,
+and several are unlicensed, so they were treated as documentation only:
+
+  - chatlog / PyWxDump / WeChatMsg — background on WeChat DB layout.
+    These repositories publish no LICENSE file; no code was copied.
+
+----------------------------------------------------------------------------
+Scope and compliance
+----------------------------------------------------------------------------
+This plugin reads only local databases belonging to the account signed in on
+this machine, opens them read-only, never uploads data, and never modifies
+the original WeChat database files. Key extraction reads process memory of
+the locally running WeChat client owned by the current user.
