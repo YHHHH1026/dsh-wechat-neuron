@@ -873,6 +873,10 @@ window.__ModuleLoader__.load({
 
       setPalette() { this.palette = readPalette() }
 
+      /**
+       * 画布恒为深空（已与用户裁决），本方法只记录当前主题供面板联动，
+       * 不再切换渲染配色 —— 加性混合的星点在白底上会烧成一片白。
+       */
       setScheme(scheme) {
         this.scheme = scheme === 'light' ? 'light' : 'dark'
       }
@@ -1053,7 +1057,6 @@ window.__ModuleLoader__.load({
         this.lastTime = now
         if (this.view.autoRotate && this.dragState === null) this.camera.yaw += dt * 0.10
         this.pulsePhase = (this.pulsePhase + dt * 0.35) % 1
-        this.armPhase = (this.armPhase ?? 0) + dt * 0.045
         this.simulate(dt)
         this.draw(now)
       }
