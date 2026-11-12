@@ -120,25 +120,25 @@ MIT / ISC / Apache-2.0 项目（`3d-force-graph`、`three.js`、`G6`、`cytoscap
 
 | 项目 | 借鉴内容 | 融入模块 | 具体落点 |
 | --- | --- | --- | --- |
-| antvis/G6 | ①图数据模型 `{nodes, edges}` 与 data-driven 布局切换；②内置布局族（force / radial / concentric / grid）的取舍；③交互状态机（hover/selected/active 三态） | 多维关系建模 + 交互控制 | `lib/graph/model.js` 的节点/边 schema；布局切换（球壳/分层/时间螺旋/群簇）的几何定义；`client.js` 的三态选择器 |
+| antvis/G6 | ①图数据模型 `{nodes, edges}` 与 data-driven 布局；②内置布局族（force / radial / concentric / grid）的取舍（最终收敛为单一星系布局）；③交互状态机（hover/selected/active 三态） | 多维关系建模 + 交互控制 | `lib/graph/model.js` 的节点/边 schema；单一星系布局（旋臂相位 / 倾斜盘面）的几何定义；`client.js` 的三态选择器 |
 | cytoscape/cytoscape.js | ①选择器语法化的筛选（按类型/属性过滤）；②图算法 API 的命名习惯（degree、neighborhood、shortestPath） | 建模 + 交互 | 筛选器 DSL 设计为 `type=person && score>=60`；`focus` 功能用邻域查询实现 |
-| vis-network | ①「物理模拟可暂停/可调参」的运行时控制；②图例与筛选 UI 的最小集合 | 交互控制 | 工具栏的「冻结布局」按钮与 physics 参数面板；图例开关的交互范式 |
+| vis-network | ①「物理模拟可暂停/可调参」的运行时控制（单一星系布局下物理已移除，仅保留自转/脉冲开关）；②图例与筛选 UI 的最小集合 | 交互控制 | 左栏的自转/脉冲/发光开关；图例开关的交互范式 |
 
 #### 方向三：3D 可视化交互
 
 | 项目 | 借鉴内容 | 融入模块 | 具体落点 |
 | --- | --- | --- | --- |
-| vasturiano/3d-force-graph | ①3D 力导向的三力模型（charge/link/center）参数化设计；②相机轨道控制的交互手感；③节点发光 + 连线透明度的视觉配方 | 3D 渲染 + 交互 | `client.js` 的 `simulate()` 三力叠加与参数默认值；轨道旋转/缩放的手势映射；发光渲染 |
-| mrdoob/three.js | ①透视投影与视锥概念（fov/近远裁剪）；②`Object3D` 矩阵栈 → 世界/屏幕坐标的变换次序；③深度排序与透明度处理 | 3D 渲染 | 手写 `project()`：世界坐标 → 旋转矩阵 → 透视除法 → 屏幕坐标；`z` 排序绘制 |
-| d3/d3-force | ①`forceManyBody` 的 1/r² 斥力与强度衰减；②`forceLink` 的弹簧 + 目标长度；③velocity Verlet 积分与 `alpha` 冷却 | 3D 渲染 | `simulate()` 的积分步进、阻尼系数、alpha 衰减曲线 |
+| vasturiano/3d-force-graph | ①相机轨道控制的交互手感；②节点发光 + 连线透明度的视觉配方；③按深度排序绘制 | 3D 渲染 + 交互 | 轨道旋转/缩放的手势映射；发光渲染；`draw()` 的深度排序（三力模型已随单一星系布局移除） |
+| mrdoob/three.js | ①`Object3D` 矩阵栈 → 世界/屏幕坐标的变换次序；②深度排序与透明度处理 | 3D 渲染 | 手写 `project()`：世界坐标 → 旋转矩阵 → **正交**缩放（`zoom × fit`）→ 屏幕坐标；`z` 排序绘制 |
+| d3/d3-force | ①`forceManyBody` 的 1/r² 斥力与强度衰减；②`forceLink` 的弹簧 + 目标长度；③velocity Verlet 积分与 `alpha` 冷却 | 3D 渲染（**已作废**） | 早期 `simulate()` 的积分步进参考；单一星系布局落地后力导向整体移除，改为缓动追随目标位（见 §7.2） |
 | vasturiano/force-graph | ①2D 版本的节点命中测试与拖拽锁定；②大图降采样策略 | 交互 + 性能 | 点击命中用屏幕空间距离平方；拖拽时临时 `fx/fy/fz` 锁定 |
 
 ### 3.3 技术选型结论
 
 | 决策 | 选择 | 理由 |
 | --- | --- | --- |
-| 3D 渲染 | **手写 Canvas 2D 伪 3D** | 插件包不能直接 `require` profile 里的 `three`/`three-spritetext`，打包 WebGL 引擎会让 Bundle 体积与构建复杂度失控；本项目节点量级 ≤ 3000，2D 投影完全够用 |
-| 力导向 | 自研 3D 版本（借鉴 three.js/3d-force-graph/d3-force 算法思想） | 同上；且需要「按维度切换力场」的能力，通用库反而要改源码 |
+| 3D 渲染 | **手写 Canvas 2D 正交投影** | 插件包不能直接 `require` profile 里的 `three`/`three-spritetext`，打包 WebGL 引擎会让 Bundle 体积与构建复杂度失控；本项目节点量级 ≤ 3000，2D 投影完全够用。透视除法已删除——倾斜盘面位图在透视下是投影变换，Canvas2D 的 `setTransform` 表达不了，会与节点永久错位 |
+| 节点落位 | 单一星系布局 + 缓动追随目标位（不再有力导向物理） | 真星系的构图必须稳定可复现；斥力/弹簧会让旋臂结构每帧漂移，读不出螺旋 |
 | 图数据 | 纯 JSON（`{meta, nodes, edges, timeline}`） | 便于导出、便于测试、无 schema 迁移负担 |
 | Host 运行时 | Node v24.13.0 内置 `node:sqlite`（`DatabaseSync`/`StatementSync`）+ `node:crypto` | 零依赖；实测该 Node 版本两模块均可用 |
 | 数据传输 | 同源 HTTP JSON（`webServer.register({kind:'prefix', path:'/wechat-neuron'})`） | 无需 IPC 协议、无需序列化框架、浏览器直接 `fetch` |
@@ -196,8 +196,8 @@ MIT / ISC / Apache-2.0 项目（`3d-force-graph`、`three.js`、`G6`、`cytoscap
 | --- | --- | --- | --- | --- |
 | 本地微信数据读取 | `lib/host/discover.js` `accounts.js` `key.js` `decrypt.js` `cache.js` `read.js` `adapters/*` | 发现数据根、枚举账号、取得密钥、解密、缓存、SQL 读取；四适配器统一接口 | 环境（APPDATA / 用户输入 / 本地 HTTP） | `RawDataset` |
 | 多维关系建模 | `lib/graph/model.js` `score.js` `dimensions.js` `topics.js` | 实体抽取、边构建、五维特征、重要度评分、话题聚类 | `RawDataset` | `Graph`（nodes/edges/timeline） |
-| 3D 神经元图谱渲染 | `client.js`（渲染段） `lib/client/render.js` `simulate.js` | 3D 投影管线、深度排序、发光与脉冲、力导向模拟 | `Graph` | Canvas 帧 |
-| 交互控制 | `lib/client/interact.js` `toolbar.js` `timeline.js` `filter.js` `detail.js` | 手势、命中测试、选择、播放、筛选、布局切换、快捷键 | 用户事件 | 渲染参数 / 选中集 |
+| 3D 神经元图谱渲染 | `client.js`（渲染段） `lib/client/render.js` `simulate.js` | 正交投影管线、深度排序、星系盘面两遍光栅化（弥漫星光 + 解析星点）、发光与脉冲 | `Graph` | Canvas 帧 |
+| 交互控制 | `lib/client/interact.js` `toolbar.js` `timeline.js` `filter.js` `detail.js` | 手势、命中测试、选择、播放、筛选、关系边按需浮现、快捷键 | 用户事件 | 渲染参数 / 选中集 |
 | 导入导出与设置 | `lib/host/export.js` `import.js` `settings.js` | JSON/CSV/GraphML 导出、bundle 导入、设置持久化 | `Graph` / 用户配置 | 文件 / `settings.json` |
 
 ### 4.3 进程边界
@@ -481,7 +481,7 @@ score = 100 × (0.30·recency
 
 ## 7. 3D 神经元图谱渲染模块
 
-### 7.1 自研 Canvas 2D 伪 3D 管线
+### 7.1 自研 Canvas 2D 正交投影管线
 
 不引入 three.js / d3，全部手写。每帧流程：
 
@@ -490,49 +490,49 @@ score = 100 × (0.30·recency
   ① 旋转：先绕 Y 轴 yaw，再绕 X 轴 pitch
        x1 = x·cosY - z·sinY ;  z1 = x·sinY + z·cosY
        y2 = y·cosP - z1·sinP ; z2 = y·sinP + z1·cosP
-  ② 平移：减去相机中心 (cx,cy,cz)，得到视图坐标 (vx,vy,vz)
-  ③ 透视：scale = fov / (fov + vz)   // vz 越大越远
-       sx = W/2 + vx·scale·zoom ; sy = H/2 + vy·scale·zoom
-  ④ 深度排序：按 vz 降序（远的先画）
-  ⑤ 绘制：连线（低 alpha）→ 节点光晕（径向渐变）→ 节点实心 → 高亮脉冲
+  ② 正交缩放：scale = zoom × fit        // 无透视除法，深度只用于排序与明暗
+       sx = W/2 + panX + x1·scale ; sy = H/2 + panY + y2·scale
+  ③ 深度排序：按 z2 降序（远的先画）
+  ④ 绘制：深空背景 → 核球柔光 → 盘面位图（lighter，一次 drawImage）
+          → 关系边（仅高亮时 + 12 条常显极淡线）→ 节点光晕 → 节点实心 → 脉冲 → 标签
 ```
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
-| `fov` | 900 | 透视焦距，越大越接近正交 |
 | `zoom` | 1.0 | 滚轮缩放，范围 0.25–4.0 |
+| `fit` | `computeFit()` 自动 | 让盘面恰好装进视口的归一化系数 |
 | `yaw/pitch` | 0.6 / -0.25 | 初始视角 |
+| `GALAXY.TAN_I` | `tan(20°)` | 盘面倾角，视觉三旋钮之一 |
+| `NEBULA_STEP` | 2 | Pass 1 弥漫星光的采样步长，视觉三旋钮之一 |
 | `glow` | 6 | 光晕半径倍数 |
-| `pulseHz` | 0.8–2.0 | 脉冲频率随 score 提升 |
+| `pulseHz` | 0.8–2.0 | 脉冲频率随 score 提升（只在被点亮的边上走） |
+
+盘面位图（`renderDiskBitmap`，离屏缓存，每帧只贴一次）：
+
+- **Pass 1 弥漫星光**：低频密度场，管旋臂结构；**不按半径加权亮度**（三种指数加权都让核心炸白吃掉盘面结构，核心亮度本就由密度自然叠出）。
+- **Pass 2 解析星点**：加性混合的 2–3px 星点，管细节。裸画 2 万颗星点屏幕覆盖 <5%，是「散沙」，必须靠 Pass 1 打底。
+- 贴图矩阵与 `project()` 严格同源：先 `setTransform(dpr,0,0,dpr,0,0)` 恢复 DPR 基准，再 `transform(cosY·s, -sinY·sinP·s, -sinY·s, -cosY·sinP·s, cx+panX, cy+panY)`；中心恒为 `h/2`，退回旧的 `h*0.48` 会让盘面相对节点下沉 0.02h。
+- 无 canvas 环境下 `gradient`/`sprite` 返回 null，`renderDiskBitmap` 返回 null，`draw()` 跳过盘面（只画背景 + 核球占位）。
 
 视觉配方（借鉴 3d-force-graph 的发光 + 连线透明度思路，重写实现）：
 
-- 节点：`ctx.createRadialGradient` 三层（核心白 → 主色 → 透明），alpha 随 `scale` 与 `tier` 变化。
-- 连线：二次贝塞尔轻微弯曲（模拟轴突），alpha = `0.08 + 0.35 × min(1, weight/maxWeight) × scale`。
+- 节点：`ctx.createRadialGradient` 三层（核心白 → 主色 → 透明），alpha 随 `depthFactor` 与 `tier` 变化。
+- 连线：**默认全隐**（真星系没有连线）；`edgesToDraw(visibleEdges, highlight, 12)` 只在悬停/选中/聚焦时浮现一跳邻居（alpha `0.30 + weight×0.25`），外加权重最高的 12 条常显极淡线（alpha 0.10）提示这张图有关系。二次贝塞尔轻微弯曲。
 - 脉冲：沿边 `t = (now·speed + seed) % 1` 取贝塞尔点画小圆点，形成「信号传导」。
 - 背景：低频径向暗角 + 极淡星点，突出中央神经元团。
 
-### 7.2 3D 力导向模拟
+### 7.2 节点落位：缓动追随星系目标位
 
-每帧（或每 N 帧）积分一次，借鉴 d3-force 的三力模型：
+力导向物理已随单一星系布局移除。`layoutGalaxyTargets()` 为每个节点算出唯一的星系目标位（半径 ∝ 重要度、角度 = 旋臂相位 + 抖动），`simulate()` 只做缓动追随：
 
 ```
-F_repel(i,j) = kRepel · (1 / (d² + ε)) · dir(i→j)        // 斥力，1/r²
-F_spring(i,j) = kSpring · (d - L_ij) · dir(i→j)          // 边弹簧，L_ij 由边权重映射
-F_center(i)   = kCenter · (0 - p_i)                      // 向原点
-v_i = (v_i + F·dt) · damping                             // 阻尼 0.88
-p_i = p_i + v_i · dt
-alpha *= 0.985                                           // 全局冷却
+if (targets === null) return                 // 无目标位则不动
+blend = max(0, blend - 0.022)                // 换图时的过渡混合系数
+ease  = blend > 0 ? 0.09 : 0.06
+p_i  += (target_i - p_i) · ease              // 三轴各自线性缓动
 ```
 
-| 参数 | person | group | topic |
-| --- | --- | --- | --- |
-| `kRepel` | 900 | 1400 | 350 |
-| `kSpring` | 0.06 | 0.05 | 0.10 |
-| `L`（理想边长） | 90–160（∝ score） | 220 | 60 |
-| `kCenter` | 0.004 | 0.010 | 0.006 |
-
-边界与稳定性：位置钳制在半径 `R=1200` 的球内；速度上限 `8`；`alpha < 0.02` 时停止积分并置为「冻结」（用户可再唤醒）。
+理由：真星系的构图必须稳定可复现。斥力/弹簧会让旋臂结构每帧漂移，缩略图下读不出螺旋；缓动追随既保证换图/筛选时有动画，又保证静止时构图不动。`project()` 已不再返回 `p.scale`（正交投影下无逐点缩放），任何新代码引用它会得到 undefined。
 
 ### 7.3 神经元隐喻映射
 
@@ -541,8 +541,8 @@ alpha *= 0.985                                           // 全局冷却
 | 胞体（soma） | person（含 self） | 径向发光圆，半径 ∝ `score`，`self` 最大且位于中心 |
 | 神经节（ganglion） | group | 环形簇：中心小核 + 成员卫星点 |
 | 突触簇（synapse cluster） | topic | 多个极小点围绕一个隐形中心，按 TF-IDF 权重分布 |
-| 轴突（axon） | `chat` / `group-member` 边 | 发光曲线，粗细 ∝ 权重 |
-| 树突（dendrite） | `co-occurrence` 边 | 半透明虚线，短程 |
+| 轴突（axon） | `chat` / `group-member` 边 | 发光曲线，粗细 ∝ 权重；**默认隐藏**，悬停/选中才浮现 |
+| 树突（dendrite） | `co-occurrence` 边 | 半透明虚线，短程；同样按需浮现 |
 | 信号脉冲 | 时间维度的「当前播放时刻」消息 | 沿边运动的小亮点，频率 ∝ 近期活跃度 |
 | 髓鞘（myelin） | 高重要度连线 | 额外一层柔和外发光 |
 | 突触间隙 | 边中段的空心断点 | 用于表现「关系强度中等」 |
@@ -553,7 +553,7 @@ alpha *= 0.985                                           // 全局冷却
 | --- | --- | --- |
 | 节点数 | ≤ 3000 绘制 | 超限时按 `score` 降采样，其余折叠为「+N」聚合节点 |
 | 边数 | ≤ 6000 绘制 | 只画每个节点的 top-K 边（默认 K=8） |
-| 帧率 | ≥ 30fps @ 1920×1080 | 静止时降为 15fps；`alpha` 冻结后停 RAF |
+| 帧率 | ≥ 30fps @ 1920×1080 | 盘面位图离屏缓存，每帧只一次 `drawImage`；关系边默认不绘制；无高亮时降为 15fps |
 | 每帧绘制调用 | ≤ 9000 次 | 批量 `beginPath`；光晕用离屏 canvas 缓存为精灵图 |
 | 首次渲染 | ≤ 800ms | 先画骨架（无光晕）再补发光 |
 | 内存 | ≤ 200MB | 节点数据用 TypedArray（`Float32Array` 存 xyz/颜色索引） |
@@ -570,25 +570,27 @@ alpha *= 0.985                                           // 全局冷却
 | 2 | 缩放 | 滚轮 / 双指捏合 | `zoom` 0.25–4.0，指数步进，围绕光标 |
 | 3 | 平移 | 右键拖拽 / 中键拖拽 | 改相机中心 `(cx,cy)`，与旋转解耦 |
 | 4 | 节点点击详情 | 屏幕空间命中测试（距离² < r²） | 右侧抽屉：昵称、分档、六维雷达、消息统计、Top 关键词、最近 5 条样例（脱敏） |
-| 5 | 拖拽节点 | 拖拽时设 `fx/fy/fz` 锁定，松手释放 | 拖拽中暂停斥力、保留弹簧 |
+| 5 | 拖拽节点 | 拖拽时设 `fx/fy/fz` 锁定，松手释放 | 拖拽期间该节点不追随星系目标位，松手后缓动归位 |
 | 6 | 时间轴播放 | 底部时间轴，按天/周分桶 | 播放速度 0.5×/1×/2×/4×；进度决定哪些消息参与脉冲与亮度 |
 | 7 | 关系高亮 | 选中节点 → 邻域高亮，非邻居 alpha × 0.15 | 支持 1 跳/2 跳切换 |
 | 8 | 筛选器 | DSL + 表单双模式 | 类型（人/群/话题）、时间范围、重要度阈值、关键词、分档 |
-| 9 | 布局切换 | 球壳 / 分层 / 时间螺旋 / 群簇 | 见下表 |
+| 9 | 关系边按需浮现 | 默认全隐；悬停/选中节点时浮现其一阶关系边 | 真星系没有连线，但图谱价值在边 |
 | 10 | 一键聚焦 | 双击节点或 `F` 键 → 相机缓动到该节点 | 250ms ease-out；聚焦后隐藏非邻域 |
 | 11 | 图例开关 | 右上角胶囊面板 | 可折叠；点击图例项即等于一类筛选 |
 | 12 | 全屏 | 面板右上角按钮 | 仅中央面板区域全屏（CSS `position: fixed`） |
-| 13 | 键盘快捷键 | `Space` 播放/暂停、`R` 重置视角、`L` 切布局、`F` 聚焦、`Esc` 取消选择、`/` 搜索 | 面板聚焦时才生效，避免劫持宿主快捷键 |
+| 13 | 键盘快捷键 | `Space` 播放/暂停、`R` 重置视角、`F` 聚焦、`Esc` 取消选择 | 面板聚焦时才生效，避免劫持宿主快捷键 |
 | 14 | 搜索定位 | 顶部搜索框，模糊匹配昵称/话题 | 命中即高亮并列表展示，回车聚焦首个 |
 
-布局定义：
+星系布局定义（唯一布局，代码中不存在布局选择器）：
 
-| 布局 | 几何 | 适用 |
+| 要素 | 几何 | 说明 |
 | --- | --- | --- |
-| 球壳（shell） | `person` 按 score 分层布在同心球壳上，`group` 在外壳 | 总览 |
-| 分层（layered） | Y 轴按重要度分 5 层，XZ 平面按群归属分扇区 | 看「核心—边缘」结构 |
-| 时间螺旋（spiral） | 半径与角度由首次互动时间决定，Y 轴为时间轴 | 看关系建立顺序 |
-| 群簇（cluster） | 每个群一个引力中心，成员被拉向所属群 | 看群内社交 |
+| 倾斜盘面 | 倾角 `i = 20°`（`GALAXY.TAN_I = Math.tan(20π/180)`）的正交投影圆盘 | 13° 时 r=0.2→1.0 转约 400°，读起来像毛球；20° 收敛为可读螺旋 |
+| 对数旋臂 | 节点按重要度决定半径、按旋臂相位决定角度 | 密度场管结构，解析星点管细节 |
+| 两遍光栅化 | Pass 1 低频弥漫星光（不按半径加权亮度）+ Pass 2 加性星点 | 2 万颗 2–3px 星点裸画是散沙，屏幕覆盖 <5% |
+| 核球 | 中心金色核球，亮度由密度自然叠出 | 指数加权会让核心炸白吃掉盘面结构 |
+
+视觉验收唯一判据：**缩略图尺寸下一眼认出是螺旋星系**（见 `docs/superpowers/specs/2026-11-12-galaxy-single-layout-design.md` §6.1）。可调旋钮只有三个：`GALAXY.TAN_I`、`NEBULA_STEP`、Pass 1 的 `globalAlpha`。
 
 ---
 
@@ -713,6 +715,8 @@ alpha *= 0.985                                           // 全局冷却
 
 ## 11. 目录结构与文件清单
 
+> 下面是 v0.1 设计期的蓝图。实际落地时 Host 侧合并为 `lib/host/{discover,extract,crypto,cipherkey,keyharvest,model,demo,settings}.js`，Client 侧全部内联在单文件 `client.js`（渲染 / 物理 / 交互 / 工具栏 / 时间轴 / 筛选 / 详情 / 主题），未拆出 `lib/client/*` 与 `lib/graph/*`；locale 实际为 `locale/zh.json` + `locale/en.json`，图标为根目录 `icon.svg`。单一星系布局的几何纯函数与可测缝见 `test/{galaxy-geometry,projection,depth,disk-points,layout,interaction,seam}.test.mjs`。
+
 ```
 wechat-neuron/
 ├── package.json                 # 包名、版本、dsh 插件声明、engines
@@ -744,7 +748,7 @@ wechat-neuron/
 │   │   └── topics.js            # 关键词抽取与话题聚类
 │   └── client/
 │       ├── render.js            # 3D 投影、深度排序、发光
-│       ├── simulate.js          # 3D 力导向
+│       ├── simulate.js          # 节点缓动追随星系目标位（原力导向已移除）
 │       ├── interact.js          # 手势、命中、选择
 │       ├── toolbar.js
 │       ├── timeline.js
@@ -833,7 +837,7 @@ ctx.slot('main').register({ key: 'wechat-neuron', component: NeuronPanel })
 | --- | --- |
 | 数据 | demo 适配器 + local 适配器的解密链路（含自加密往返测试） |
 | 建模 | 四类实体、四类边、五维特征、评分公式与分档 |
-| 渲染 | Canvas 2D 伪 3D + 3D 力导向 + 神经元视觉（光晕/轴突/脉冲） |
+| 渲染 | Canvas 2D 正交投影 + 单一星系布局（密度场 + 加性星点）+ 神经元视觉（光晕/脉冲） |
 | 交互 | 旋转/缩放/平移、点击详情、拖拽、图例、聚焦、全屏、快捷键 |
 | 导出 | `bundle.json` + `summary.md` |
 | 验收 | 演示集 30fps；slot 注册经 `cordis_inspect_query` 确认 |
@@ -841,7 +845,7 @@ ctx.slot('main').register({ key: 'wechat-neuron', component: NeuronPanel })
 ### v0.2（真实数据与多维深化）
 
 - chatlog 适配器打通 + import 适配器（CSV 列映射 UI）。
-- 时间轴播放与回放速度、筛选器 DSL、四种布局全部落地。
+- 时间轴播放与回放速度、筛选器 DSL 全部落地。
 - 头像贴图、群内成员卫星点、话题突触簇聚合。
 - 导出 CSV / GraphML；脱敏模式。
 - 聚合节点可展开（LOD 两级）。
@@ -861,4 +865,4 @@ ctx.slot('main').register({ key: 'wechat-neuron', component: NeuronPanel })
 | 微信升级改加密参数 | local 适配器全挂 | `detect.js` 候选表 + 明确错误码 + 引导用 chatlog 适配器 |
 | 无 LICENSE 项目被误用 | 法律风险 | 第 2.2 节的纪律 + code review 检查项 |
 | 大库读取超时 | 首屏卡死 | 采样上限 + 分页游标 + 进度事件 |
-| 渲染性能 | 交互卡顿 | 降采样 + LOD + 冻结模拟 + TypedArray |
+| 渲染性能 | 交互卡顿 | 盘面位图离屏缓存 + 边按需绘制 + 降采样 + LOD + TypedArray |

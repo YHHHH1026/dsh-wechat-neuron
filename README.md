@@ -27,9 +27,9 @@
 | 数据读取 | 自动发现微信 3.x / 4.x 数据目录，读取 `contact` / `session` / `message` 库；SQLCipher 加密库支持内存解密（密钥只存内存，可选记住） |
 | 关系建模 | 联系人、群聊、话题三类实体；聊天 / 群成员 / 共同群聊 / 话题关联四类关系 |
 | 重要度评分 | 六维加权（新近度 30% / 频次 22% / 互惠 16% / 主动 12% / 深度 10% / 亲密 10%），五档分层：核心 / 挚友 / 常联系 / 弱连接 / 沉默 |
-| 3D 渲染 | Canvas 2D 自绘透视投影 + 力导向/银河双物理；金色核球、旋臂薄雾、星尘、星芒、光晕、脉冲 |
-| 交互 | 旋转、缩放、平移、节点点击详情、双击聚焦、时间轴播放、关系高亮、筛选、六种布局切换、一键聚焦、图例开关、导入导出 |
-| 6 种布局 | 银河（旋臂）/ 球体 / 时间螺旋 / 类型星团 / 放射 / 力导向 |
+| 3D 渲染 | Canvas 2D 自绘正交投影 + 单一星系布局（密度场弥漫星光 + 加性星点两遍光栅化）；金色核球、旋臂薄雾、星尘、星芒、光晕、脉冲 |
+| 交互 | 旋转、缩放、平移、节点点击详情、双击聚焦、时间轴播放、关系边悬停/选中浮现、筛选、一键聚焦、图例开关、导入导出 |
+| 星系布局 | 唯一布局：倾角 20° 的倾斜盘面 + 对数旋臂密度场，节点按重要度与旋臂相位落位；关系边默认隐藏 |
 
 ### 五个观察维度
 
@@ -48,7 +48,7 @@
 - **时间轴播放**：播放 / 暂停 / 拖动 / 全部（快捷键 `Space`）
 - **关系高亮**：选中节点后高亮其一阶邻居；搜索框输入任意人/群/话题即时高亮
 - **筛选器**：左栏重要度分层勾选、话题/群聊/共同群聊/标签/脉冲/自转开关
-- **布局切换**：银河 / 球体 / 时间螺旋 / 类型星团 / 放射 / 力导向
+- **关系边浮现**：边默认全隐（真星系没有连线）；悬停或选中节点时浮现其关系边
 - **一键聚焦**：重要度榜「聚焦我」、节点双击聚焦（快捷键 `F`）、`R` 复位
 - **图例开关**：右上「图例 ×」/ 左下「图例」
 - **导入导出**：导出当前图谱为 JSON；导入 JSON 覆盖当前视图
@@ -62,9 +62,9 @@
 | [LC044/WeChatMsg](https://github.com/LC044/WeChatMsg) | **42.3k** | **未声明 LICENSE**（仅借鉴思路，不复制代码） | 微信聊天记录提取 / 导出 | 多库（`message_0.db` / `message_1.db`）分片合并读取、`Name2Id`→`username` 发送者反查、消息类型码到语义类型的映射 → `lib/host/extract.js` |
 | [sjzar/chatlog](https://github.com/sjzar/chatlog) | **9.2k** | **未声明 LICENSE**（仅借鉴思路，不复制代码） | 聊天记录工具（含密钥获取思路） | 微信 4.x 目录布局（`xwechat_files/<wxid>/db_storage`）、`session` 表驱动的会话清单、按需解密而非全量落地 → `lib/host/discover.js` + `lib/host/crypto.js` |
 | [xaoyaoo/PyWxDump](https://github.com/xaoyaoo/PyWxDump) | **9.6k** | **未声明 LICENSE**（仅借鉴思路，不复制代码） | 微信数据库解密 / 取证 | SQLCipher 参数族（PBKDF2 迭代数、HMAC 算法、页保留区/trailer 长度）的候选集设计，逐 profile 试探首页 HMAC → `lib/host/crypto.js` |
-| [vasturiano/3d-force-graph](https://github.com/vasturiano/3d-force-graph) | **6.6k** | MIT | 3D 力导向图 | 斥力/弹簧/阻尼的力导向参数与「低 alpha 冻结」策略、按深度排序绘制 → `client.js` 的 `simulate()` / `draw()` |
-| [mrdoob/three.js](https://github.com/mrdoob/three.js) | **118k** | MIT | 3D 渲染 | 透视投影与深度衰减的数学思路（本插件用 Canvas 2D 自绘，不引入依赖）→ `project()` |
-| [antvis/G6](https://github.com/antvis/G6) | **12.4k** | MIT | 图分析与可视化 | 图数据模型（nodes/edges/meta）与布局注册表式设计 → `lib/host/model.js` 的 `LAYOUTS` 化 |
+| [vasturiano/3d-force-graph](https://github.com/vasturiano/3d-force-graph) | **6.6k** | MIT | 3D 力导向图 | 按深度排序绘制、发光与连线透明度的视觉配方 → `client.js` 的 `draw()`（力导向物理已随单一星系布局移除，节点改为缓动追随星系目标位） |
+| [mrdoob/three.js](https://github.com/mrdoob/three.js) | **118k** | MIT | 3D 渲染 | 世界/屏幕坐标的变换次序与深度排序思路（本插件用 Canvas 2D 自绘**正交投影**，不引入依赖）→ `project()` |
+| [antvis/G6](https://github.com/antvis/G6) | **12.4k** | MIT | 图分析与可视化 | 图数据模型（nodes/edges/meta）与交互三态语义 → `lib/host/model.js` 的 schema、`client.js` 的 hover/selected/active |
 | [cytoscape/cytoscape.js](https://github.com/cytoscape/cytoscape.js) | **11.3k** | MIT | 图分析 | 邻居高亮与「选中即聚焦」的交互语义 → `setFocus()` / `pick()` |
 | [leesingx/dsh-Memory-Galaxy](https://github.com/leesingx/dsh-Memory-Galaxy) | 17 | MIT | DSH 插件 / 银河可视化（**UI 风格基准**） | 深空底色 + 金色核球 + 三旋臂薄雾 + 星尘 + 统一标签层 + 玻璃拟态浮窗的整套视觉与动效参数 → `client.js` 的 `CSS` / `draw()` / `simulate()` |
 
@@ -177,4 +177,4 @@ plugin_manager install_bundle  <克隆目录绝对路径>
   定向提取失败时才回退到旧的**只读内存扫描**（C# 并行 AES 预筛 + 布局无关判定 + 三级预算），覆盖 32 字节 raw key、hex 口令、UTF-16LE hex、宽字符数组与 AES-128/256。
   历史结论更正：早期文档曾写「部分 4.x 把密钥交给独立安全进程、主进程不常驻」——那是在判定 oracle 有缺陷（硬编码 rollback-journal 版本字节，WAL 模式下把正确密钥判否）时得出的，**已被推翻**。DPAPI 与明文配置两条路线仍属实测排除。
 - 微信 4.x 的 `message_*.db` 分片会按 mtime 合并读取，超大账号读取较慢（上限 20 万条 / 次）。
-- 3D 引擎为 Canvas 2D 自绘透视投影，节点数超过约 1500 时会掉帧（真实账号实测 2093 节点 / 3556 边，已需降采样）。
+- 3D 引擎为 Canvas 2D 自绘正交投影 + 单一星系布局；真实账号实测 2093 节点 / 3556 边下约 59fps（盘面位图离屏缓存，关系边默认不绘制）。节点数超过约 3000 时按 `score` 降采样。
