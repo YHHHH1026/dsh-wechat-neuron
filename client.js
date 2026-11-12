@@ -423,6 +423,69 @@ window.__ModuleLoader__.load({
 
     const FOV = 900
 
+    /* 星系几何常量：世界单位，盘半径归一化到 R=1.15，位图覆盖 [-DISK_R, DISK_R] */
+    const GALAXY = {
+      R: 1.15,
+      DISK_R: 1.25,
+      R0: 0.12,
+      TAN_I: Math.tan((13 * Math.PI) / 180),
+      H: 0.28,
+      BULGE_FRACTION: 0.15,
+      BULGE_H: 0.10,
+      BULGE_TRUNC: 0.25,
+      ARM_STARTS: [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2],
+      ARM_WEIGHT: [1, 0.45, 1, 0.45],
+      STARS: 20000,
+      DISK_BITMAP: 3072,
+    }
+
+    const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+
+    function hash01(id) {
+      const str = String(id == null ? '' : id)
+      let h = 0x811c9dc5
+      for (let i = 0; i < str.length; i += 1) {
+        h ^= str.charCodeAt(i)
+        h = Math.imul(h, 0x01000193) >>> 0
+      }
+      return (h >>> 0) / 4294967296
+    }
+
+    function gauss(rng, sigma) {
+      const u1 = Math.max(1e-12, rng())
+      const u2 = rng()
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * sigma
+    }
+
+    function safeScore(value) {
+      return clampNum(Number(value) || 0, 0, 100)
+    }
+
+    const galaxyMath = {
+      hash01,
+      gauss,
+      safeScore,
+      armAngle(armIndex, r) {
+        const start = GALAXY.ARM_STARTS[((armIndex % 4) + 4) % 4]
+        return start + Math.log(Math.max(1e-6, r) / GALAXY.R0) / GALAXY.TAN_I
+      },
+      armSigma(r) {
+        return clampNum(0.11 / Math.max(1e-6, r), 0.06, 0.55)
+      },
+      diskRadius(rng) {
+        return -GALAXY.H * Math.log(Math.max(1e-12, rng()) * Math.max(1e-12, rng()))
+      },
+      bulgeRadius(rng) {
+        return Math.min(GALAXY.BULGE_TRUNC, -GALAXY.BULGE_H * Math.log(Math.max(1e-12, rng()) * Math.max(1e-12, rng())))
+      },
+      starBrightness(u) {
+        return 0.08 + 0.92 * Math.pow(clampNum(u, 0, 1), 4)
+      },
+      nodePolarRadius(score) {
+        return 0.10 + Math.pow(1 - safeScore(score) / 100, 1.35) * 0.92
+      },
+    }
+
     class NeuronRenderer {
       constructor(canvas, handlers) {
         this.canvas = canvas
@@ -2038,7 +2101,7 @@ window.__ModuleLoader__.load({
     }
 
     if (globalThis.__WNEUR_TEST__ === true) {
-      exported.__test = { NeuronRenderer }
+      exported.__test = { NeuronRenderer, GALAXY, galaxyMath }
     }
 
     return exported
