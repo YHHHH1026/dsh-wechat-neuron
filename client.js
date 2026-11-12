@@ -421,8 +421,6 @@ window.__ModuleLoader__.load({
      * 3D 渲染引擎
      * ------------------------------------------------------------------ */
 
-    const FOV = 900
-
     /* 星系几何常量：世界单位，盘半径归一化到 R=1.15，位图覆盖 [-DISK_R, DISK_R] */
     const GALAXY = {
       R: 1.15,
@@ -572,8 +570,14 @@ window.__ModuleLoader__.load({
 
       /** 按当前布局的真实包围球把整张图缩放到视口内，避免节点挤成一团或飞出画布。 */
       computeFit() {
+        const w = this.w || 800
+        const h = this.h || 600
+        const viewport = Math.min(w, h)
+        const wanted = viewport * 0.46
+        // 盘面半径 R，跨度 DISK_R；fit 上限保证整张盘（含越界星点）不溢出视口。
+        const cap = wanted / GALAXY.R
         const list = this.nodes ?? []
-        if (list.length === 0) { this.fit = 1; return }
+        if (list.length === 0) { this.fit = cap; return }
         const radii = []
         for (const node of list) {
           const target = this.targets?.get(node.id)
@@ -585,12 +589,11 @@ window.__ModuleLoader__.load({
         // 取 82 分位而不是最大值：最外圈的话题/弱连接会把整图压得过小，
         // 让真正要突出的人（核心/挚友）缩成米粒。分位数能让主体占到画面。
         radii.sort((a, b) => a - b)
-        const pick = radii[Math.min(radii.length - 1, Math.floor(radii.length * 0.82))] ?? 40
-        const maxRadius = Math.max(120, pick)
-        const viewport = Math.min(this.w || 800, this.h || 600)
-        const wanted = viewport * 0.46
-        const projected = maxRadius * (FOV / 1000)
-        this.fit = Math.max(0.25, Math.min(4, wanted / Math.max(1, projected)))
+        const pick = radii[Math.min(radii.length - 1, Math.floor(radii.length * 0.82))] ?? GALAXY.R
+        // 正交投影下屏幕位移直接是「世界半径 × fit」，盘面本身无条件绘制，
+        // 因此下限必须是 GALAXY.R：节点全挤在原点时也要让盘面铺满视口。
+        const maxRadius = Math.max(GALAXY.R, pick)
+        this.fit = Math.min(wanted / Math.max(1e-6, maxRadius), cap)
       }
 
       setPalette() { this.palette = readPalette() }
@@ -643,9 +646,10 @@ window.__ModuleLoader__.load({
           const y = 1 - 2 * t
           const radius = Math.sqrt(Math.max(0, 1 - y * y))
           const theta = golden * index
-          node.x = Math.cos(theta) * radius * 320
-          node.y = y * 320
-          node.z = Math.sin(theta) * radius * 320
+          const shell = GALAXY.R * 1.0
+          node.x = Math.cos(theta) * radius * shell
+          node.y = y * shell
+          node.z = Math.sin(theta) * radius * shell
           node.vx = (Math.random() - 0.5) * 0.4
           node.vy = (Math.random() - 0.5) * 0.4
           node.vz = (Math.random() - 0.5) * 0.4
@@ -654,11 +658,11 @@ window.__ModuleLoader__.load({
 
       radiusOf(node) {
         // 视觉尺度：核心略大，其余保持克制的星点感，避免「一堆大圆球」糊在一起。
-        if (node.type === 'self') return 19
-        if (node.type === 'topic') return 2.6 + Math.min(4, Math.sqrt(Number(node.score) || 1) * 0.56)
-        const score = Number(node.score) || 0
+        if (node.type === 'self') return 13
+        if (node.type === 'topic') return 1.6 + Math.min(1.2, Math.sqrt(safeScore(node.score)) * 0.19)
+        const score = safeScore(node.score)
         const base = node.type === 'group' ? 7.6 : 5.9
-        return base + Math.pow(score / 100, 1.3) * 15
+        return Math.min(9, base + Math.pow(score / 100, 1.3) * 3.1)
       }
 
       tierRank(tier) { return TIER_ORDER[tier] ?? 9 }
@@ -892,12 +896,10 @@ window.__ModuleLoader__.load({
         const z1 = node.x * sinY + node.z * cosY
         const y2 = node.y * cosP - z1 * sinP
         const z2 = node.y * sinP + z1 * cosP
-        const depth = z2 + 1000
-        const scale = FOV / Math.max(180, depth) * zoom * (this.fit || 1)
+        const scale = zoom * (this.fit || 1)
         return {
           sx: this.w / 2 + panX + x1 * scale,
           sy: this.h / 2 + panY + y2 * scale,
-          scale,
           depth: z2,
         }
       }
