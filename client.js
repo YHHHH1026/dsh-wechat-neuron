@@ -732,6 +732,32 @@ window.__ModuleLoader__.load({
       return { r: 0.80 + 0.45 * (1 - k), a: 0.70 + 0.35 * (1 - k) }
     }
 
+    /**
+     * 边默认不画：真星系没有连线。只在高亮时浮现一跳邻居，
+     * 另外常显权重最高的 topN 条极淡边，作为「这张图有关系」的提示。
+     */
+    function edgesToDraw(edges, highlight, topN = 12) {
+      const out = []
+      const lit = new Set()
+      if (highlight !== null && highlight !== undefined) {
+        for (const edge of edges) {
+          if (highlight.has(edge.a.id) || highlight.has(edge.b.id)) {
+            out.push({ edge, kind: 'lit' })
+            lit.add(edge)
+          }
+        }
+      }
+      const ranked = edges.slice().sort((a, b) => (b.weight || 1) - (a.weight || 1))
+      let faint = 0
+      for (const edge of ranked) {
+        if (lit.has(edge)) continue
+        if (faint >= topN) break
+        out.push({ edge, kind: 'faint' })
+        faint += 1
+      }
+      return out
+    }
+
     class NeuronRenderer {
       constructor(canvas, handlers) {
         this.canvas = canvas
@@ -1095,51 +1121,46 @@ window.__ModuleLoader__.load({
         const highlight = selectedSet ?? focusSet ?? hoverSet
 
         // ---- 边 ----
-        const edgeList = this.edges
+        // 真星系没有连线：边默认全隐，只在高亮时浮现一跳邻居，
+        // 外加权重最高的 12 条常显极淡线（提示这张图有关系）。
+        const visibleEdges = this.edges
           .filter(edge => this.visible(edge.a) && this.visible(edge.b))
           .filter(edge => (edge.type !== 'co-occurrence' || this.view.showCooccurrence)
             && (edge.type !== 'topic' || this.view.showTopics))
-          .map(edge => {
-            const pa = projected.get(edge.a.id)
-            const pb = projected.get(edge.b.id)
-            return { edge, pa, pb, depth: (pa.depth + pb.depth) / 2 }
-          })
-          .sort((a, b) => a.depth - b.depth)
 
-        for (const item of edgeList) {
-          const { edge, pa, pb } = item
-          const isConnected = highlight !== null && (highlight.has(edge.a.id) || highlight.has(edge.b.id))
-          const dimmed = highlight !== null && !isConnected
+        for (const { edge, kind } of edgesToDraw(visibleEdges, highlight, 12)) {
+          const pa = projected.get(edge.a.id)
+          const pb = projected.get(edge.b.id)
+          if (!pa || !pb) continue
           const weight = Math.min(1, (edge.weight || 1) / this.maxWeight)
-          let alpha = (edge.type === 'co-occurrence' ? 0.06 : 0.13) + weight * 0.42
-          if (edge.type === 'topic') alpha *= 0.5
-          if (dimmed) alpha *= 0.14
-          if (isConnected) alpha = Math.min(0.8, alpha * 1.7)
-          if (alpha < 0.012) continue
+          const litEdge = kind === 'lit'
+          const alpha = litEdge ? 0.30 + weight * 0.25 : 0.10
           const color = edge.type === 'group-member' ? '#5ee7d0'
             : edge.type === 'co-occurrence' ? '#a98bff'
               : edge.type === 'topic' ? '#ff7ac6' : brand
+          ctx.globalCompositeOperation = 'lighter'
           ctx.strokeStyle = color
           ctx.globalAlpha = alpha
-          ctx.lineWidth = edge.type === 'chat' ? 0.5 + weight * 1.6 : 0.4 + weight * 0.7
+          ctx.lineWidth = litEdge ? 0.9 + weight * 1.4 : 1
           const mx = (pa.sx + pb.sx) / 2 + (pa.sy - pb.sy) * 0.08
           const my = (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * 0.08
           ctx.beginPath()
           ctx.moveTo(pa.sx, pa.sy)
           ctx.quadraticCurveTo(mx, my, pb.sx, pb.sy)
           ctx.stroke()
-          // 信号脉冲
-          if (this.view.pulse && (edge.type === 'chat' && (edge.a.type === 'self' || edge.b.type === 'self')) && (isConnected || highlight === null)) {
-            const t = (this.pulsePhase * 1.6 + (edge.index % 13) / 13) % 1
+          // 信号脉冲只在被点亮的关系上走，避免整屏闪
+          if (litEdge && this.view.pulse) {
+            const t = (this.pulsePhase * 1.6 + ((edge.index || 0) % 13) / 13) % 1
             const ix = (1 - t) * (1 - t) * pa.sx + 2 * (1 - t) * t * mx + t * t * pb.sx
             const iy = (1 - t) * (1 - t) * pa.sy + 2 * (1 - t) * t * my + t * t * pb.sy
-            ctx.globalAlpha = Math.min(1, alpha * 3.4)
+            ctx.globalAlpha = Math.min(1, alpha * 2.6)
             ctx.fillStyle = color
             ctx.beginPath()
             ctx.arc(ix, iy, 1.1 + weight * 1.5, 0, Math.PI * 2)
             ctx.fill()
           }
         }
+        ctx.globalCompositeOperation = 'source-over'
         ctx.globalAlpha = 1
 
         // ---- 节点 ----
@@ -1306,19 +1327,30 @@ window.__ModuleLoader__.load({
       pick(sx, sy) {
         let best = null
         let bestScore = Infinity
+        let nearest = null
+        let nearestDistance = Infinity
         for (const node of this.nodes) {
           if (!this.visible(node)) continue
           const p = this.project(node)
-          const radius = Math.max(6, node.r * p.scale * 0.9)
+          // 命中半径不再乘投影 scale：正交投影下 scale 与屏幕像素无关，
+          // 之前 `node.r * p.scale * 0.9` 会把它放大到几千像素，整块画布都成热区。
+          const radius = Math.max(9, node.r)
           const dx = p.sx - sx
           const dy = p.sy - sy
           const distance = Math.sqrt(dx * dx + dy * dy)
-          if (distance <= radius + 4 && distance / radius < bestScore) {
+          if (distance <= radius && distance / radius < bestScore) {
             bestScore = distance / radius
             best = node
           }
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearest = node
+          }
         }
-        return best
+        if (best !== null) return { node: best, exact: true }
+        // 弱节点的星点只有 2–4px，精确命中几乎不可能 —— 退化成「附近最近的节点」。
+        if (nearest !== null && nearestDistance <= 28) return { node: nearest, exact: false }
+        return null
       }
 
       /* -------- 交互 -------- */
@@ -1362,7 +1394,8 @@ window.__ModuleLoader__.load({
           }
           return
         }
-        const node = this.pick(sx, sy)
+        const hit = this.pick(sx, sy)
+        const node = hit === null ? null : hit.node
         if ((node?.id ?? null) !== (this.hover?.id ?? null)) {
           this.hover = node
           this.handlers.onHover?.(node === null ? null : {
@@ -1384,7 +1417,8 @@ window.__ModuleLoader__.load({
         if (state === null) return
         if (state.moved > 6) return
         const rect = this.canvas.getBoundingClientRect()
-        const node = this.pick(event.clientX - rect.left, event.clientY - rect.top)
+        const hit = this.pick(event.clientX - rect.left, event.clientY - rect.top)
+        const node = hit === null ? null : hit.node
         this.handlers.onPick?.(node === null ? null : {
           id: node.id, label: node.label, type: node.type, score: node.score, tier: node.tier, username: node.username,
         })
@@ -1392,8 +1426,9 @@ window.__ModuleLoader__.load({
 
       onDoubleClick(event) {
         const rect = this.canvas.getBoundingClientRect()
-        const node = this.pick(event.clientX - rect.left, event.clientY - rect.top)
-        if (node !== null) {
+        const hit = this.pick(event.clientX - rect.left, event.clientY - rect.top)
+        if (hit !== null) {
+          const node = hit.node
           this.camera.panX = 0
           this.camera.panY = 0
           this.handlers.onFocus?.(node.id)
@@ -2180,7 +2215,7 @@ window.__ModuleLoader__.load({
     }
 
     if (globalThis.__WNEUR_TEST__ === true) {
-      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor }
+      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor, edgesToDraw }
     }
 
     return exported
