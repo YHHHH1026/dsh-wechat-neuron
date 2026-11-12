@@ -1982,7 +1982,7 @@ window.__ModuleLoader__.load({
      * 注册
      * ------------------------------------------------------------------ */
 
-    return {
+    const exported = {
       inject: ['slots'],
       apply(ctx) {
         runtime.ctx = ctx
@@ -2036,5 +2036,11 @@ window.__ModuleLoader__.load({
         }
       },
     }
+
+    if (globalThis.__WNEUR_TEST__ === true) {
+      exported.__test = { NeuronRenderer }
+    }
+
+    return exported
   },
 })
