@@ -1,5 +1,6 @@
 /* wechat-neuron · client half
- * 神经元风格 3D 微信关系图谱：Canvas 2D 自研伪 3D 管线 + 力导向布局 + 多维筛选。
+ * 神经元风格微信关系图谱：Canvas 2D 正交投影 + 单一星系布局（密度场弥漫星光 + 加性星点）
+ * + 常驻「星系调校」实时旋钮 + 多维筛选。
  */
 window.__ModuleLoader__.load({
   id: 'dsh-wechat-neuron',
@@ -47,6 +48,9 @@ window.__ModuleLoader__.load({
   --wnr-tint: rgba(120,160,255,.09); --wnr-tint-2: rgba(120,160,255,.06); --wnr-tint-3: rgba(255,255,255,.05);
   --wnr-soft: #b3c1dc; --wnr-chip: #c4d4ef; --wnr-body: #c8d5ec; --wnr-rail-bg: rgba(7,10,20,.62);
   --wnr-drawer-bg: rgba(7,10,20,.74); --wnr-card-bg: rgba(14,20,36,.68);
+  --wnr-scroll-track: rgba(10,16,32,.72); --wnr-scroll-edge: rgba(120,160,255,.10);
+  --wnr-scroll-a: rgba(122,168,255,.42); --wnr-scroll-b: rgba(94,231,208,.30); --wnr-scroll-hi: rgba(160,205,255,.78);
+  --wnr-knob-track: rgba(120,160,255,.14); --wnr-knob-a: #6fc7ff; --wnr-knob-b: #5ee7d0;
   position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;
   color: var(--wnr-text); background: var(--wnr-bg);
   font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
@@ -57,7 +61,10 @@ window.__ModuleLoader__.load({
   --wnr-accent: #2f6fed; --wnr-teal: #0d9488; --wnr-gold: #b4791b;
   --wnr-tint: rgba(47,111,237,.08); --wnr-tint-2: rgba(47,111,237,.05); --wnr-tint-3: rgba(16,32,64,.04);
   --wnr-soft: #41546f; --wnr-chip: #33455f; --wnr-body: #33445e; --wnr-rail-bg: rgba(255,255,255,.6);
-  --wnr-drawer-bg: rgba(255,255,255,.78); --wnr-card-bg: rgba(255,255,255,.72); }
+  --wnr-drawer-bg: rgba(255,255,255,.78); --wnr-card-bg: rgba(255,255,255,.72);
+  --wnr-scroll-track: rgba(24,48,96,.07); --wnr-scroll-edge: rgba(24,48,96,.10);
+  --wnr-scroll-a: rgba(47,111,237,.42); --wnr-scroll-b: rgba(13,148,136,.34); --wnr-scroll-hi: rgba(47,111,237,.72);
+  --wnr-knob-track: rgba(24,48,96,.12); --wnr-knob-a: #2f6fed; --wnr-knob-b: #0d9488; }
 .wneur[data-scheme="light"] .wneur-title h1 { color: #16305c; }
 .wneur[data-scheme="light"] .wneur-btn { color: #2b3f60; border-color: rgba(47,111,237,.24); background: var(--wnr-tint); }
 .wneur[data-scheme="light"] .wneur-btn:hover { background: rgba(47,111,237,.16); color: #10233f; }
@@ -95,10 +102,23 @@ window.__ModuleLoader__.load({
 .wneur[data-scheme="light"] .wneur-hint { color: #6b7c99; text-shadow: none; }
 .wneur[data-scheme="light"] .wneur-modal-mask { background: rgba(24,40,70,.28); }
 .wneur[data-scheme="light"] .wneur-loading { color: #5d6d8b; }
+.wneur[data-scheme="light"] .wneur-tune { background: linear-gradient(180deg, rgba(47,111,237,.07), rgba(13,148,136,.04) 42%, transparent), var(--wnr-card-bg); }
+.wneur[data-scheme="light"] .wneur-tune-actions button:hover { background: rgba(47,111,237,.16); color: #10233f; }
+.wneur[data-scheme="light"] .wneur-pal button[aria-pressed="true"] { color: #10305e; background: rgba(47,111,237,.14); }
+.wneur[data-scheme="light"] .wneur-knob input[type="range"]::-webkit-slider-thumb {
+  background: radial-gradient(circle at 35% 32%, #ffffff, var(--wnr-knob-a) 66%, rgba(20,40,80,.55));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 1px 5px rgba(20,40,80,.35); }
 .wneur * { box-sizing: border-box; }
-.wneur ::-webkit-scrollbar { width: 8px; height: 8px; }
-.wneur ::-webkit-scrollbar-thumb { background: rgba(120,160,255,.22); border-radius: 4px; }
-.wneur ::-webkit-scrollbar-track { background: transparent; }
+/* 自绘滚动条：轨道/滑块都取自深空色板，不用系统灰条 */
+.wneur { scrollbar-width: thin; scrollbar-color: var(--wnr-scroll-thumb) var(--wnr-scroll-track); }
+.wneur ::-webkit-scrollbar { width: 9px; height: 9px; }
+.wneur ::-webkit-scrollbar-track { background: var(--wnr-scroll-track); border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--wnr-scroll-edge); }
+.wneur ::-webkit-scrollbar-thumb { border-radius: 999px; border: 2px solid transparent; background-clip: padding-box;
+  background-image: linear-gradient(180deg, var(--wnr-scroll-a), var(--wnr-scroll-b)); }
+.wneur ::-webkit-scrollbar-thumb:hover { background-image: linear-gradient(180deg, var(--wnr-scroll-hi), var(--wnr-scroll-a)); }
+.wneur ::-webkit-scrollbar-thumb:active { background-image: linear-gradient(180deg, var(--wnr-scroll-hi), var(--wnr-scroll-hi)); }
+.wneur ::-webkit-scrollbar-corner { background: transparent; }
 
 .wneur-head { display: flex; align-items: center; gap: 12px; padding: 11px 16px; flex: 0 0 auto;
   border-bottom: 1px solid var(--wnr-border); background: var(--wnr-panel);
@@ -167,8 +187,8 @@ window.__ModuleLoader__.load({
 .wneur-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 9px currentColor; background: currentColor; flex: none; }
 .wneur-line { width: 18px; height: 1px; background: currentColor; flex: none; }
 
-.wneur-rail { flex: 0 0 208px; display: flex; flex-direction: column; gap: 9px; padding: 12px;
-  border-right: 1px solid var(--wnr-border); overflow-y: auto; background: var(--wnr-rail-bg); }
+.wneur-rail { flex: 0 0 236px; display: flex; flex-direction: column; gap: 9px; padding: 12px 10px 12px 12px;
+  border-right: 1px solid var(--wnr-border); overflow-y: auto; overflow-x: hidden; background: var(--wnr-rail-bg); }
 .wneur-card { border: 1px solid var(--wnr-border); border-radius: 11px; padding: 10px;
   background: var(--wnr-card-bg); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .wneur-card > h3 { margin: 0 0 8px; font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
@@ -193,6 +213,51 @@ window.__ModuleLoader__.load({
 .wneur-rank i { font-style: normal; font-size: 10px; color: var(--wnr-dim); font-variant-numeric: tabular-nums; }
 .wneur-rank b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wnr-text); }
 .wneur-rank u { text-decoration: none; font-size: 10px; padding: 1px 6px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+
+/* ---- 星系调校：常驻控制区（不折叠、不进设置弹窗） ---- */
+.wneur-tune { border-color: var(--wnr-border-hi); background:
+  linear-gradient(180deg, rgba(111,199,255,.07), rgba(94,231,208,.03) 42%, transparent),
+  var(--wnr-card-bg); }
+.wneur-tune > h3 { color: var(--wnr-accent); letter-spacing: .18em; }
+.wneur-tune-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 9px; }
+.wneur-tune-actions button { padding: 5px 2px; font-size: 11px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--wnr-border); background: var(--wnr-tint); color: var(--wnr-soft);
+  transition: background .15s, color .15s, border-color .15s, transform .12s; }
+.wneur-tune-actions button:hover { background: rgba(111,199,255,.2); color: var(--wnr-strong); border-color: var(--wnr-border-hi); }
+.wneur-tune-actions button:active { transform: translateY(1px); }
+.wneur-knob { display: block; padding: 4px 0 2px; }
+.wneur-knob-head { display: flex; align-items: baseline; gap: 6px; font-size: 11.5px; color: var(--wnr-soft); }
+.wneur-knob-head b { font-weight: 500; }
+.wneur-knob-head em { margin-left: auto; font-style: normal; font-size: 11px; color: var(--wnr-accent);
+  font-variant-numeric: tabular-nums; }
+.wneur-knob input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 16px;
+  margin: 2px 0 0; background: transparent; cursor: ew-resize; display: block; }
+.wneur-knob input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg, var(--wnr-knob-a) 0%, var(--wnr-knob-b) var(--wnr-fill, 50%), var(--wnr-knob-track) var(--wnr-fill, 50%)); }
+.wneur-knob input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; border: 0;
+  background: radial-gradient(circle at 35% 32%, #ffffff, var(--wnr-knob-a) 62%, rgba(20,40,80,.9));
+  box-shadow: 0 0 0 1px rgba(10,18,36,.6), 0 0 8px rgba(111,199,255,.55); transition: box-shadow .15s, transform .12s; }
+.wneur-knob input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.14); box-shadow: 0 0 0 1px rgba(10,18,36,.6), 0 0 14px rgba(111,199,255,.85); }
+.wneur-knob input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.05); }
+.wneur-knob input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: var(--wnr-knob-track); }
+.wneur-knob input[type="range"]::-moz-range-progress { height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg, var(--wnr-knob-a), var(--wnr-knob-b)); }
+.wneur-knob input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; border: 0;
+  background: radial-gradient(circle at 35% 32%, #ffffff, var(--wnr-knob-a) 62%, rgba(20,40,80,.9));
+  box-shadow: 0 0 8px rgba(111,199,255,.55); }
+.wneur-knob input[type="range"]:focus-visible { outline: 1px solid var(--wnr-border-hi); outline-offset: 3px; border-radius: 8px; }
+.wneur-knob small { display: block; font-size: 10px; line-height: 1.35; color: var(--wnr-dim); margin-top: 1px; }
+.wneur-pal { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 2px 0 6px; }
+.wneur-pal button { padding: 5px 2px 4px; font-size: 10.5px; border-radius: 8px; cursor: pointer; color: var(--wnr-muted);
+  border: 1px solid var(--wnr-border); background: var(--wnr-tint-2); display: flex; flex-direction: column;
+  align-items: center; gap: 4px; transition: background .15s, color .15s, border-color .15s; }
+.wneur-pal button i { width: 100%; height: 5px; border-radius: 999px; display: block; }
+.wneur-pal button:hover { color: var(--wnr-strong); background: var(--wnr-tint); }
+.wneur-pal button[aria-pressed="true"] { color: var(--wnr-strong); border-color: var(--wnr-border-hi);
+  background: rgba(111,199,255,.16); box-shadow: inset 0 0 0 1px rgba(160,205,255,.16); }
+.wneur-tune-foot { margin-top: 7px; font-size: 10px; color: var(--wnr-dim); display: flex; gap: 6px; align-items: center; }
+.wneur-tune-foot span { flex: 1; }
 
 .wneur-timeline { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 18px 12px;
   border-top: 1px solid var(--wnr-border); background: var(--wnr-panel-2);
@@ -413,20 +478,152 @@ window.__ModuleLoader__.load({
      * 3D 渲染引擎
      * ------------------------------------------------------------------ */
 
-    /* 星系几何常量：世界单位，盘半径归一化到 R=1.15，位图覆盖 [-DISK_R, DISK_R] */
+    /* 星系几何常量：世界单位，盘半径归一化到 R=1.15，位图覆盖 [-DISK_R, DISK_R]。
+     * 这里同时是「星系调校」面板的可变状态：所有纯函数都从这里读，改完重建位图即可。 */
     const GALAXY = {
       R: 1.15,
       DISK_R: 1.25,
       R0: 0.12,
-      TAN_I: Math.tan((20 * Math.PI) / 180),
-      H: 0.28,
-      BULGE_FRACTION: 0.15,
-      BULGE_H: 0.10,
-      BULGE_TRUNC: 0.25,
+      /* 旋臂角宽（弧度）。关键：必须是「恒定角宽」而不是「恒定世界宽度」。
+       * 旧实现 armSigma = 0.11/r 在 r=0.2 处角宽达 31°，四条臂在盘心附近彻底糊在一起，
+       * 而指数盘的质量恰恰集中在小半径 —— 这就是「絮状星云」读不出旋臂的根因。 */
+      ARM_SIGMA: 0.115,
+      PITCH_DEG: 16,
+      TAN_I: Math.tan((16 * Math.PI) / 180),
+      H: 0.26,
+      BULGE_FRACTION: 0.13,
+      BULGE_H: 0.085,
+      BULGE_TRUNC: 0.20,
       ARM_STARTS: [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2],
-      ARM_WEIGHT: [1, 0.45, 1, 0.45],
-      STARS: 20000,
-      DISK_BITMAP: 3072,
+      /* 大设计（grand design）：两条主臂 + 两条弱支臂，臂间留出真正的暗隙 */
+      ARM_WEIGHT: [1, 0.32, 1, 0.32],
+      ARM_PURITY: 0.88,
+      STARS: 26000,
+      NEBULA: 1,
+      DUST: 1,
+      DISK_BITMAP: 2048,
+      PALETTE: 'deep',
+    }
+
+    /** 出厂值：复位按钮与「随机」的基准，也是测试断言的锚点。 */
+    const GALAXY_DEFAULTS = Object.freeze({
+      PITCH_DEG: 16, ARM_SIGMA: 0.115, ARM_PURITY: 0.88,
+      STARS: 26000, NEBULA: 1, DUST: 1, PALETTE: 'deep',
+    })
+
+    /** 相机与节点层的出厂值（与盘面几何分开：改这些不需要重建位图）。 */
+    const VIEW_DEFAULTS = Object.freeze({
+      tiltDeg: 41, zoom: 1.3, spin: 0.10, glow: 4.2, labelDensity: 0.34,
+    })
+
+    /**
+     * 「星系调校」的旋钮定义：面板与随机/复位/导出共用同一张表，
+     * 新增旋钮只改这里，UI 自动长出来。scope='disk' 的改动要重建位图，
+     * scope='view' 的改动只动相机/节点层（每帧读，零重建成本）。
+     */
+    const TUNING = Object.freeze([
+      { key: 'PITCH_DEG', scope: 'disk', label: '旋臂缠绕', min: 8, max: 34, step: 0.5, digits: 1, unit: '°', hint: '越小越卷：8°≈2.9 圈，34°≈0.6 圈' },
+      { key: 'ARM_SIGMA', scope: 'disk', label: '旋臂宽度', min: 0.04, max: 0.30, step: 0.005, digits: 3, hint: '角宽（弧度）。过大四条臂会糊成一团' },
+      { key: 'ARM_PURITY', scope: 'disk', label: '旋臂纯度', min: 0.35, max: 1, step: 0.01, pct: true, hint: '多少星点归入旋臂，其余均匀铺盘' },
+      { key: 'STARS', scope: 'disk', label: '恒星数量', min: 6000, max: 60000, step: 1000, kilo: true, hint: '位图星点总数，越高越细腻也越慢' },
+      { key: 'NEBULA', scope: 'disk', label: '弥漫星光', min: 0, max: 2.2, step: 0.05, digits: 2, hint: '低频柔光层强度：旋臂的连续结构靠它' },
+      { key: 'DUST', scope: 'disk', label: '尘埃暗带', min: 0, max: 2.2, step: 0.05, digits: 2, hint: '沿主臂内缘擦出的暗隙，结构感来源' },
+      { key: 'tiltDeg', scope: 'view', label: '盘面倾角', min: 4, max: 86, step: 1, unit: '°', hint: '相机俯角：90° 正视，越小越侧' },
+      { key: 'zoom', scope: 'view', label: '视距缩放', min: 0.4, max: 3.2, step: 0.02, digits: 2, unit: '×' },
+      { key: 'spin', scope: 'view', label: '自转速度', min: 0, max: 0.6, step: 0.01, digits: 2, hint: '需勾选「自动旋转」' },
+      { key: 'glow', scope: 'view', label: '节点光晕', min: 0, max: 8, step: 0.1, digits: 1, hint: '过大会盖住旋臂，建议 ≤5' },
+      { key: 'labelDensity', scope: 'view', label: '标签密度', min: 0, max: 1, step: 0.02, pct: true, hint: '按重要度分位取样，0 = 只留「我」' },
+    ])
+
+    /** 随机取值：只在「读得出螺旋」的区间里抖，避免一键随机出毛球。 */
+    const RANDOM_RANGES = Object.freeze({
+      PITCH_DEG: [11, 24], ARM_SIGMA: [0.07, 0.16], ARM_PURITY: [0.78, 0.97],
+      STARS: [18000, 42000], NEBULA: [0.7, 1.5], DUST: [0.6, 1.6],
+      tiltDeg: [26, 62], zoom: [1.05, 1.7], spin: [0.04, 0.22],
+      glow: [2.4, 5.2], labelDensity: [0.12, 0.4],
+    })
+
+    function tuningDefaults() {
+      const out = {}
+      for (const knob of TUNING) out[knob.key] = knob.scope === 'disk' ? GALAXY_DEFAULTS[knob.key] : VIEW_DEFAULTS[knob.key]
+      out.PALETTE = GALAXY_DEFAULTS.PALETTE
+      return out
+    }
+
+    function tuningRandom(random = Math.random) {
+      const out = {}
+      for (const knob of TUNING) {
+        const [lo, hi] = RANDOM_RANGES[knob.key] ?? [knob.min, knob.max]
+        const raw = lo + random() * (hi - lo)
+        const snapped = Math.round(raw / knob.step) * knob.step
+        out[knob.key] = Number(clampNum(snapped, knob.min, knob.max).toFixed(4))
+      }
+      out.PALETTE = PALETTE_IDS[Math.floor(random() * PALETTE_IDS.length)] ?? 'deep'
+      return out
+    }
+
+    function formatKnob(knob, value) {
+      const n = Number(value) || 0
+      if (knob.pct) return `${Math.round(n * 100)}%`
+      if (knob.kilo) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`
+      // 没显式给小数位时按步长推断：0.5 步 → 1 位，1 步 → 0 位
+      const digits = knob.digits ?? (knob.step >= 1 ? 0 : (String(knob.step).split('.')[1] ?? '').length)
+      return `${n.toFixed(digits)}${knob.unit ?? ''}`
+    }
+
+    const TUNING_STORAGE_KEY = 'wechat-neuron.tuning.v1'
+
+    /** 读本机保存的调校值；任何脏数据都退回出厂值，不让面板因存储损坏而崩。 */
+    function readSavedTuning() {
+      try {
+        const raw = globalThis.localStorage?.getItem(TUNING_STORAGE_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object') return null
+        const out = tuningDefaults()
+        for (const knob of TUNING) {
+          const value = Number(parsed[knob.key])
+          if (Number.isFinite(value)) out[knob.key] = clampNum(value, knob.min, knob.max)
+        }
+        if (PALETTE_IDS.includes(parsed.PALETTE)) out.PALETTE = parsed.PALETTE
+        return out
+      } catch {
+        return null
+      }
+    }
+
+    function writeSavedTuning(tuning) {
+      try {
+        globalThis.localStorage?.setItem(TUNING_STORAGE_KEY, JSON.stringify(tuning))
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    /* 恒星色族：取自真实恒星光谱分类（O/B 蓝白、G 金、M 红），
+     * 不是随便挑的装饰色 —— 换一套就是换一个星系的整体色温。 */
+    const STAR_PALETTES = {
+      deep: { label: '深空', blue: [0xcf, 0xe0, 0xff], warm: [0xff, 0xe6, 0xc4], hii: [0xff, 0x9e, 0xcf], core: [255, 246, 225] },
+      ember: { label: '暖金', blue: [0xff, 0xd9, 0xa8], warm: [0xff, 0xf2, 0xd6], hii: [0xff, 0x8f, 0x6b], core: [255, 238, 205] },
+      frost: { label: '冷银', blue: [0xe4, 0xf0, 0xff], warm: [0xc9, 0xdc, 0xf5], hii: [0x8f, 0xd4, 0xff], core: [232, 242, 255] },
+      rose: { label: '玫瑰', blue: [0xd9, 0xc6, 0xff], warm: [0xff, 0xd2, 0xe8], hii: [0xff, 0x6f, 0xb8], core: [255, 232, 244] },
+    }
+    const PALETTE_IDS = Object.keys(STAR_PALETTES)
+
+    let STAR_BLUE = STAR_PALETTES.deep.blue
+    let STAR_WARM = STAR_PALETTES.deep.warm
+    let STAR_MAGENTA = STAR_PALETTES.deep.hii
+    let STAR_CORE = STAR_PALETTES.deep.core
+
+    function applyStarPalette(id) {
+      const palette = STAR_PALETTES[id] ?? STAR_PALETTES.deep
+      GALAXY.PALETTE = STAR_PALETTES[id] ? id : 'deep'
+      STAR_BLUE = palette.blue
+      STAR_WARM = palette.warm
+      STAR_MAGENTA = palette.hii
+      STAR_CORE = palette.core
+      return palette
     }
 
     const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
@@ -466,9 +663,16 @@ window.__ModuleLoader__.load({
         const start = GALAXY.ARM_STARTS[((armIndex % 4) + 4) % 4]
         return start + Math.log(Math.max(1e-6, r) / GALAXY.R0) / GALAXY.TAN_I
       },
+      /* 恒定「角宽」+ 轻微径向渐扩：臂的世界宽度随 r 线性增长（教科书螺旋的样子），
+       * 盘心附近反而更窄。旧式 0.11/r 在 r=0.2 处角宽 31°，四条臂在质量最集中的
+       * 内盘彻底重叠 —— 那是「絮状星云」的直接成因。 */
       armSigma(r) {
-        return clampNum(0.11 / Math.max(1e-6, r), 0.06, 0.55)
+        const taper = 0.72 + 0.28 * clampNum(Math.max(0, Number(r) || 0) / GALAXY.R, 0, 1.4)
+        return clampNum(GALAXY.ARM_SIGMA * taper, 0.02, 0.6)
       },
+      /* 旋臂只在核球之外存在：r < ARM_INNER 的星点归入平滑核球，
+       * 这样「亮核 + 核外起臂」的经典结构才立得住。 */
+      ARM_INNER: 0.22,
       diskRadius(rng) {
         return -GALAXY.H * Math.log(Math.max(1e-12, rng()) * Math.max(1e-12, rng()))
       },
@@ -536,13 +740,9 @@ window.__ModuleLoader__.load({
       return targets
     }
 
-    const STAR_BLUE = [0xcf, 0xe0, 0xff]
-    const STAR_WARM = [0xff, 0xe6, 0xc4]
-    const STAR_MAGENTA = [0xff, 0x9e, 0xcf]
-
     /**
      * 盘面星点云：纯数据，不碰 canvas，可在 Node 里直接测。
-     * 15% 核球（球对称）+ 85% 薄盘；薄盘里 70% 贴臂、30% 均匀铺满，
+     * 核球（球对称）+ 薄盘；薄盘里 ARM_PURITY 比例贴臂、其余均匀铺满，
      * 这是「看起来像旋涡星系」而不是「两条画上去的线」的关键。
      */
     function generateDiskPoints(rng) {
@@ -581,7 +781,7 @@ window.__ModuleLoader__.load({
           // 拒绝采样保证所有点都落在位图跨度内（指数盘尾部会溢出 DISK_R）
           do { r = galaxyMath.diskRadius(random) } while (r > GALAXY.DISK_R)
           let theta
-          if (random() < 0.7) {
+          if (r >= galaxyMath.ARM_INNER && random() < GALAXY.ARM_PURITY) {
             const arm = pickArm()
             theta = galaxyMath.armAngle(arm, Math.max(GALAXY.R0, r)) + galaxyMath.gauss(random, galaxyMath.armSigma(r))
           } else {
@@ -673,7 +873,7 @@ window.__ModuleLoader__.load({
         // 亮度不要按半径额外加权：星点密度本身就已经在核心处高得多，
         // 加性混合会自然叠出中心亮度。再乘一层指数会让核心从盘面里「炸」出来。
         const diameter = 30 + 36 * b
-        ctx.globalAlpha = 0.030 + 0.026 * b
+        ctx.globalAlpha = (0.030 + 0.026 * b) * GALAXY.NEBULA
         ctx.drawImage(sprite, toPx(points.xs[i]) - diameter / 2, toPx(points.zs[i]) - diameter / 2, diameter, diameter)
       }
 
@@ -702,7 +902,7 @@ window.__ModuleLoader__.load({
         for (let lane = 0; lane < 4; lane += 1) {
           const offset = galaxyMath.armSigma(0.7) * (1.6 + lane * 0.35)
           const width = (0.045 + lane * 0.012) * scale
-          ctx.globalAlpha = 0.18 - lane * 0.022
+          ctx.globalAlpha = Math.max(0, (0.18 - lane * 0.022) * GALAXY.DUST)
           ctx.lineWidth = width
           ctx.beginPath()
           let started = false
@@ -769,7 +969,7 @@ window.__ModuleLoader__.load({
         this.nodeById = new Map()
         this.edges = []
         this.adj = new Map()
-        this.camera = { yaw: 0.62, pitch: -0.58, zoom: 1.2, panX: 0, panY: 0 }
+        this.camera = { yaw: 0.62, pitch: -(VIEW_DEFAULTS.tiltDeg * Math.PI) / 180, zoom: VIEW_DEFAULTS.zoom, panX: 0, panY: 0 }
         this.pointers = new Map()
         this.hover = null
         this.selected = null
@@ -783,10 +983,12 @@ window.__ModuleLoader__.load({
         this.targets = null
         this.blend = 0
         this.pulsePhase = 0
+        this.labelRank = new Map()
         this.view = {
           showTopics: true, showGroups: true, showCooccurrence: true,
-          minTier: 'weak', pulse: true, glow: 6, autoRotate: true, labels: true,
+          minTier: 'weak', pulse: true, autoRotate: true, labels: true,
           search: '', timeIndex: -1, highlightOnly: false,
+          glow: VIEW_DEFAULTS.glow, spin: VIEW_DEFAULTS.spin, labelDensity: VIEW_DEFAULTS.labelDensity,
         }
         this._onResize = () => this.resize()
         this._onWheel = (event) => this.onWheel(event)
@@ -885,18 +1087,30 @@ window.__ModuleLoader__.load({
        * 盘面位图只在首次挂载 + DPR 变化 时重建；旋转/缩放/resize/主题切换一律不重建。
        * 生成放在 idle 里，期间背景与核球照常绘制，不会白屏。
        */
-      ensureDisk() {
+      ensureDisk(force = false) {
         const dpr = Math.min(2, window.devicePixelRatio || 1)
-        if (this.disk && this.disk.dpr === dpr) return
-        if (this._diskScheduled) return
+        if (!force && this.disk && this.disk.dpr === dpr) return
+        if (this._diskScheduled) { this._diskDirty = true; return }
         this._diskScheduled = true
+        this._diskDirty = false
         const build = () => {
           this._diskScheduled = false
           const bitmap = renderDiskBitmap(generateDiskPoints(Math.random))
           if (bitmap) this.disk = { bitmap, dpr }
+          this.start()
+          // 拖动旋钮时多次 force 会合并成一次重建，但最后一次的值必须生效
+          if (this._diskDirty) { this._diskDirty = false; this.ensureDisk(true) }
         }
-        if (typeof requestIdleCallback === 'function') requestIdleCallback(build, { timeout: 1500 })
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(build, { timeout: 120 })
         else setTimeout(build, 0)
+      }
+
+      /** 调校面板改完 GALAXY 后调用：重建位图 + 重排节点落位。 */
+      rebuildGalaxy() {
+        this.ensureDisk(true)
+        this.applyLayout()
+        this.alpha = Math.max(this.alpha, 0.35)
+        this.start()
       }
 
       setGraph(graph) {
@@ -979,11 +1193,26 @@ window.__ModuleLoader__.load({
         this.blend = 1
         this.alpha = Math.max(this.alpha, 0.35)
         this.computeFit()
+        this.computeLabelRank()
+      }
+
+      /** 重要度分位（0=最重要）：标签按分位取样，与节点数量无关，换数据集也不会突然铺满。 */
+      computeLabelRank() {
+        const ranked = this.nodes
+          .filter(node => node.type !== 'topic')
+          .slice()
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+        const total = Math.max(1, ranked.length)
+        this.labelRank = new Map(ranked.map((node, index) => [node.id, index / total]))
       }
 
       setView(patch) {
         Object.assign(this.view, patch)
         if (patch.timeIndex !== undefined) this.alpha = Math.max(this.alpha, 0.2)
+        // 倾角是相机参数，不是盘面几何：改它不需要重建位图，节点与盘面同源投影会自动对齐。
+        if (patch.tiltDeg !== undefined) this.camera.pitch = -(clampNum(patch.tiltDeg, 4, 86) * Math.PI) / 180
+        if (patch.zoom !== undefined) this.camera.zoom = clampNum(patch.zoom, 0.32, 3.6)
+        this.start()
       }
 
       setSelected(id) {
@@ -1055,7 +1284,7 @@ window.__ModuleLoader__.load({
       tick(now) {
         const dt = Math.min(0.05, Math.max(0.001, (now - this.lastTime) / 1000))
         this.lastTime = now
-        if (this.view.autoRotate && this.dragState === null) this.camera.yaw += dt * 0.10
+        if (this.view.autoRotate && this.dragState === null) this.camera.yaw += dt * (this.view.spin ?? 0.10)
         this.pulsePhase = (this.pulsePhase + dt * 0.35) % 1
         this.simulate(dt)
         this.draw(now)
@@ -1083,14 +1312,15 @@ window.__ModuleLoader__.load({
         ctx.fillStyle = space
         ctx.fillRect(0, 0, this.w, this.h)
 
-        // 核球外围的大面积柔光（星点本体在盘面位图里）
+        // 核球外围的大面积柔光（星点本体在盘面位图里）。色温跟随恒星色族。
         const coreR = Math.max(110, Math.min(this.w, this.h) * 0.42)
+        const [cr, cg, cb] = STAR_CORE
         const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
-        core.addColorStop(0, 'rgba(255,246,225,0.16)')
-        core.addColorStop(0.12, 'rgba(255,232,190,0.09)')
-        core.addColorStop(0.34, 'rgba(255,205,140,0.035)')
-        core.addColorStop(0.7, 'rgba(240,180,120,0.014)')
-        core.addColorStop(1, 'rgba(255,190,120,0)')
+        core.addColorStop(0, `rgba(${cr},${cg},${cb},0.16)`)
+        core.addColorStop(0.12, `rgba(${cr},${Math.round(cg * 0.94)},${Math.round(cb * 0.85)},0.09)`)
+        core.addColorStop(0.34, `rgba(${cr},${Math.round(cg * 0.83)},${Math.round(cb * 0.62)},0.035)`)
+        core.addColorStop(0.7, `rgba(${Math.round(cr * 0.94)},${Math.round(cg * 0.73)},${Math.round(cb * 0.53)},0.014)`)
+        core.addColorStop(1, `rgba(${cr},${Math.round(cg * 0.77)},${Math.round(cb * 0.53)},0)`)
         ctx.fillStyle = core
         ctx.beginPath()
         ctx.arc(cx, cy, coreR, 0, Math.PI * 2)
@@ -1250,8 +1480,13 @@ window.__ModuleLoader__.load({
             }
           }
 
-          const showLabel = this.view.labels && (node.type === 'self' || radius > 5 || isSelected || isFocus)
-          if (showLabel && alpha > 0.3) {
+          // 标签是「星系读感」的头号杀手：几十个中文名铺满盘面会把旋臂彻底盖掉。
+          // 改成按重要度分位取样（labelDensity），自己/选中/聚焦永远保留。
+          const forced = node.type === 'self' || isSelected || isFocus
+          const density = clampNum(this.view.labelDensity ?? 0.34, 0, 1)
+          const ranked = this.labelRank.get(node.id) ?? 1
+          const showLabel = this.view.labels && alpha > 0.3 && (forced || (density > 0 && ranked <= density && radius > 2.2))
+          if (showLabel) {
             labelQueue.push({ node, p, radius, alpha, isSelected, color })
           }
         }
@@ -1439,7 +1674,7 @@ window.__ModuleLoader__.load({
       }
 
       reset() {
-        this.camera = { yaw: 0.62, pitch: -0.58, zoom: 1.2, panX: 0, panY: 0 }
+        this.camera = { yaw: 0.62, pitch: -(VIEW_DEFAULTS.tiltDeg * Math.PI) / 180, zoom: VIEW_DEFAULTS.zoom, panX: 0, panY: 0 }
         this.alpha = 1
         this.applyLayout()
       }
@@ -1605,6 +1840,50 @@ window.__ModuleLoader__.load({
               key: item.id, className: 'wneur-chip', onClick: () => onFocus(item.id),
             }, shortLabel(item.label, 10))))),
       )
+    }
+
+    /**
+     * 星系调校：常驻在左栏，11 个旋钮 + 4 套恒星色族 + 复位/随机/存为默认。
+     * 拖动即时生效 —— disk 类改动走 rebuildGalaxy（idle 合并重建位图），
+     * view 类改动只写相机/节点层，每帧读，零重建。
+     */
+    function GalaxyTuning({ tuning, onPatch, onReset, onRandom, onSave }) {
+      return h('div', { className: 'wneur-card wneur-tune' },
+        h('h3', null, '星系调校'),
+        h('div', { className: 'wneur-tune-actions' },
+          h('button', { onClick: onReset, title: '回到出厂参数' }, '复位'),
+          h('button', { onClick: onRandom, title: '在「读得出螺旋」的区间里随机' }, '随机'),
+          h('button', { onClick: onSave, title: '把当前参数存为本机默认' }, '存默认')),
+        h('div', { className: 'wneur-pal' },
+          PALETTE_IDS.map(id => h('button', {
+            key: id,
+            'aria-pressed': tuning.PALETTE === id,
+            onClick: () => onPatch({ PALETTE: id }),
+            title: `恒星色族：${STAR_PALETTES[id].label}`,
+          },
+            h('i', {
+              style: {
+                background: `linear-gradient(90deg, rgb(${STAR_PALETTES[id].blue.join(',')}), rgb(${STAR_PALETTES[id].warm.join(',')}), rgb(${STAR_PALETTES[id].hii.join(',')}))`,
+              },
+            }),
+            STAR_PALETTES[id].label))),
+        TUNING.map(knob => {
+          const value = Number(tuning[knob.key]) || 0
+          const fill = ((value - knob.min) / (knob.max - knob.min)) * 100
+          return h('label', { className: 'wneur-knob', key: knob.key, title: knob.hint ?? knob.label },
+            h('span', { className: 'wneur-knob-head' },
+              h('b', null, knob.label),
+              h('em', null, formatKnob(knob, value))),
+            h('input', {
+              type: 'range', min: knob.min, max: knob.max, step: knob.step, value,
+              'aria-label': knob.label,
+              style: { '--wnr-fill': `${Math.max(0, Math.min(100, fill)).toFixed(1)}%` },
+              onChange: (event) => onPatch({ [knob.key]: Number(event.target.value) }),
+            }),
+            knob.hint ? h('small', null, knob.hint) : null)
+        }),
+        h('div', { className: 'wneur-tune-foot' },
+          h('span', null, '拖动即时生效 · 盘面参数会重建位图')))
     }
 
     function SettingsModal({ status, onClose, onRefresh, onToast }) {
@@ -1796,9 +2075,14 @@ window.__ModuleLoader__.load({
       const [playing, setPlaying] = useState(false)
       const [view, setView] = useState({
         showTopics: true, showGroups: true, showCooccurrence: true,
-        minTier: 'weak', pulse: true, glow: 6, labels: true,
+        minTier: 'weak', pulse: true, labels: true,
+        glow: VIEW_DEFAULTS.glow, spin: VIEW_DEFAULTS.spin, labelDensity: VIEW_DEFAULTS.labelDensity,
+        tiltDeg: VIEW_DEFAULTS.tiltDeg, zoom: VIEW_DEFAULTS.zoom,
         autoRotate: !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
       })
+      /* 星系调校状态：单一真源。GALAXY 是渲染层读的可变副本，由下面的 effect 同步。 */
+      const [tuning, setTuning] = useState(() => readSavedTuning() ?? tuningDefaults())
+      const tuningSigRef = useRef('')
 
       // 外观主题必须在任何依赖它的渲染/依赖数组之前取值（否则触发 TDZ）
       const scheme = useScheme()
@@ -1909,6 +2193,31 @@ window.__ModuleLoader__.load({
         rendererRef.current?.setView({ ...view, search, timeIndex })
       }, [view, search, timeIndex])
 
+      /* 调校 → 渲染层：disk 类参数写进 GALAXY 并重建位图；view 类参数走 setView。
+       * 用 ref 记住上一次的 disk 签名，避免只拖相机旋钮时也重建两万次星点。 */
+      useEffect(() => {
+        const diskPatch = {}
+        for (const knob of TUNING) {
+          if (knob.scope === 'disk') diskPatch[knob.key] = tuning[knob.key]
+        }
+        const paletteChanged = GALAXY.PALETTE !== tuning.PALETTE
+        applyStarPalette(tuning.PALETTE)
+        Object.assign(GALAXY, diskPatch)
+        GALAXY.TAN_I = Math.tan((clampNum(GALAXY.PITCH_DEG, 4, 60) * Math.PI) / 180)
+        const signature = JSON.stringify([diskPatch, tuning.PALETTE])
+        const viewPatch = {}
+        for (const knob of TUNING) {
+          if (knob.scope === 'view') viewPatch[knob.key] = tuning[knob.key]
+        }
+        setView(current => ({ ...current, ...viewPatch }))
+        const renderer = rendererRef.current
+        if (renderer === null) return
+        if (tuningSigRef.current !== signature || paletteChanged) {
+          tuningSigRef.current = signature
+          renderer.rebuildGalaxy()
+        }
+      }, [tuning])
+
       useEffect(() => {
         rendererRef.current?.setSelected(selected)
       }, [selected])
@@ -1958,6 +2267,20 @@ window.__ModuleLoader__.load({
       const currentBucket = timeIndex >= 0 && timeIndex < buckets ? timeline[timeIndex] : null
 
       const patchView = useCallback((patch) => setView(current => ({ ...current, ...patch })), [])
+
+      const patchTuning = useCallback((patch) => setTuning(current => ({ ...current, ...patch })), [])
+      const resetTuning = useCallback(() => {
+        setTuning(tuningDefaults())
+        rendererRef.current?.reset()
+        showToast('星系参数已复位')
+      }, [showToast])
+      const randomTuning = useCallback(() => {
+        setTuning(tuningRandom(Math.random))
+        showToast('已随机一套星系参数')
+      }, [showToast])
+      const saveTuning = useCallback(() => {
+        showToast(writeSavedTuning(tuning) ? '已存为本机默认，下次打开自动套用' : '保存失败：浏览器存储不可用')
+      }, [tuning, showToast])
 
       const exportJson = useCallback(() => {
         if (graph === null) return
@@ -2045,6 +2368,13 @@ window.__ModuleLoader__.load({
         })(),
         h('div', { className: 'wneur-main' },
           h('div', { className: 'wneur-rail' },
+            h(GalaxyTuning, {
+              tuning,
+              onPatch: patchTuning,
+              onReset: resetTuning,
+              onRandom: randomTuning,
+              onSave: saveTuning,
+            }),
             h('div', { className: 'wneur-card' },
               h('h3', null, '重要度分层'),
               TIERS.filter(tier => tier.id !== 'topic').map(tier => h('label', { className: 'wneur-check', key: tier.id },
@@ -2218,7 +2548,12 @@ window.__ModuleLoader__.load({
     }
 
     if (globalThis.__WNEUR_TEST__ === true) {
-      exported.__test = { NeuronRenderer, GALAXY, galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor, edgesToDraw }
+      exported.__test = {
+        NeuronRenderer, GALAXY, GALAXY_DEFAULTS, VIEW_DEFAULTS, STAR_PALETTES, PALETTE_IDS,
+        TUNING, RANDOM_RANGES, tuningDefaults, tuningRandom, formatKnob, applyStarPalette,
+        readSavedTuning, writeSavedTuning, TUNING_STORAGE_KEY,
+        galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor, edgesToDraw,
+      }
     }
 
     return exported

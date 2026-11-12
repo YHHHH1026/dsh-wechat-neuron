@@ -26,11 +26,18 @@ function dev(points, i) {
 
 const points = generateDiskPoints(seeded(20261112))
 
-test('星点数是设计的固定 20000', () => {
-  assert.equal(points.count, 20000)
-  assert.equal(points.xs.length, 20000)
-  assert.equal(points.bs.length, 20000)
-  assert.equal(points.colors.length, 20000 * 3)
+test('星点数跟随 GALAXY.STARS（调校旋钮可改，不是写死的 20000）', () => {
+  assert.equal(points.count, GALAXY.STARS)
+  assert.equal(points.xs.length, GALAXY.STARS)
+  assert.equal(points.bs.length, GALAXY.STARS)
+  assert.equal(points.colors.length, GALAXY.STARS * 3)
+  const before = GALAXY.STARS
+  try {
+    GALAXY.STARS = 9000
+    assert.equal(generateDiskPoints(seeded(7)).count, 9000)
+  } finally {
+    GALAXY.STARS = before
+  }
 })
 
 test('全部坐标有限且落在位图跨度内', () => {

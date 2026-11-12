@@ -10,12 +10,21 @@ test('armAngle 起点正确且随半径单调递增', () => {
   assert.ok(M.armAngle(2, 1.0) > M.armAngle(2, 0.5))
 })
 
-test('armSigma 让旋臂横截宽度恒定（角宽 × r = 0.11）', () => {
-  for (const r of [0.30, 0.60, 1.00, 1.15]) {
-    assert.ok(Math.abs(r * M.armSigma(r) - 0.11) < 1e-12, `r=${r} width=${r * M.armSigma(r)}`)
-  }
-  assert.equal(M.armSigma(0.12), 0.55) // 0.11/0.12≈0.917 被上限截为 0.55
-  assert.equal(M.armSigma(5), 0.06) // 下限 0.06（盘外才有意义）
+test('armSigma 恒定角宽：内盘不再糊成一团（旧式 0.11/r 的回归防线）', () => {
+  // 角宽必须近似恒定（只允许轻微径向渐扩），否则质量最集中的内盘会被四条臂填满。
+  const inner = M.armSigma(0.25)
+  const outer = M.armSigma(1.15)
+  assert.ok(outer / inner < 1.5, `角宽扩张过大 inner=${inner} outer=${outer}`)
+  assert.ok(inner < 0.20, `内盘角宽 ${inner} rad 仍过宽（旧实现 0.44）`)
+  // 世界宽度随半径增长 —— 教科书螺旋的臂是越往外越宽的
+  assert.ok(1.15 * outer > 0.25 * inner * 2, '世界宽度未随半径增长')
+  assert.equal(M.armSigma(0), GALAXY.ARM_SIGMA * 0.72)
+  assert.ok(M.armSigma(99) <= 0.6)
+})
+
+test('ARM_INNER 让旋臂从核球之外起笔', () => {
+  assert.ok(M.ARM_INNER > GALAXY.BULGE_TRUNC * 0.8, '起臂半径落在核球内部')
+  assert.ok(M.ARM_INNER < 0.4, '起臂半径过大，盘面只剩外圈')
 })
 
 test('diskRadius 的均值等于 2h（Gamma(2,h) 反演）', () => {
