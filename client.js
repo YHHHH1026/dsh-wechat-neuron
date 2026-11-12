@@ -2,7 +2,7 @@
  * 神经元风格 3D 微信关系图谱：Canvas 2D 自研伪 3D 管线 + 力导向布局 + 多维筛选。
  */
 window.__ModuleLoader__.load({
-  id: 'wechat-neuron',
+  id: 'dsh-wechat-neuron',
   factory(require) {
     const React = require('react')
     const { useCallback, useEffect, useMemo, useRef, useState } = React
