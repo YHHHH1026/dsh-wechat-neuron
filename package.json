@@ -1,6 +1,6 @@
 {
   "name": "dsh-wechat-neuron",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "WeChat Neuron — 把本机微信聊天记录整理成神经元风格的动态 3D 关系图谱（DSH 插件，仅 Windows）",
   "main": "index.js",
