@@ -25,6 +25,38 @@ window.__ModuleLoader__.load({
     ]
     const TIER_ORDER = { core: 0, friend: 1, regular: 2, weak: 3, silent: 4, topic: 5 }
     const TIER_COLOR = Object.fromEntries(TIERS.map(tier => [tier.id, tier.color]))
+
+    /**
+     * 重要度分层用「逐档独立勾选」，不是「最小档位阈值」。
+     * 阈值模型下勾选框只有一个方向的语义：取消高档会把低档一起关掉（点第一行第二行没了），
+     * 打开低档则因为 checked 恒为 true 而什么都不发生（点别的勾不上）。这正是用户报的那组 BUG。
+     */
+    const TIER_VISIBLE_DEFAULT = ['core', 'friend', 'regular', 'weak']
+
+    function toggleTier(list, id) {
+      if (TIER_ORDER[id] === undefined) return Array.isArray(list) ? list.slice() : TIER_VISIBLE_DEFAULT.slice()
+      const current = Array.isArray(list) ? list : TIER_VISIBLE_DEFAULT
+      const next = current.includes(id) ? current.filter(item => item !== id) : current.concat(id)
+      return next.slice().sort((a, b) => (TIER_ORDER[a] ?? 9) - (TIER_ORDER[b] ?? 9))
+    }
+
+    /**
+     * 标签是否显示（纯函数，便于测试）。
+     * forced = 自己/悬停/选中/聚焦 —— 这四类必须无条件显示：
+     * 悬停若是走 density 抽样，鼠标移上去的瞬间名字就没了，人根本点不中。
+     */
+    function labelShouldShow(forced, alpha, rank, radius, density) {
+      if (forced) return true
+      return alpha > 0.3 && density > 0 && rank <= density && radius > 2.2
+    }
+
+    /** 从 view 取可见档位集合（面板与渲染层共用；兼容只有 minTier 的旧配置）。 */
+    function tierVisibleOf(view) {
+      const raw = view?.tierVisible
+      if (Array.isArray(raw)) return raw
+      const floor = TIER_ORDER[view?.minTier] ?? TIER_ORDER.weak
+      return TIER_VISIBLE_DEFAULT.filter(tier => (TIER_ORDER[tier] ?? 9) <= floor)
+    }
     const KIND_LABEL = {
       text: '文本', image: '图片', voice: '语音', video: '视频', link: '链接',
       card: '名片', sticker: '表情', location: '位置', call: '通话',
@@ -1015,7 +1047,7 @@ window.__ModuleLoader__.load({
         this.labelRank = new Map()
         this.view = {
           showTopics: true, showGroups: true, showCooccurrence: true,
-          minTier: 'weak', pulse: true, autoRotate: true, labels: true,
+          tierVisible: TIER_VISIBLE_DEFAULT.slice(), pulse: true, autoRotate: true, labels: true,
           search: '', timeIndex: -1, highlightOnly: false,
           glow: VIEW_DEFAULTS.glow, spin: VIEW_DEFAULTS.spin, labelDensity: VIEW_DEFAULTS.labelDensity,
         }
@@ -1172,6 +1204,8 @@ window.__ModuleLoader__.load({
           this.adj.get(edge.b.id).add(edge.a.id)
         }
         this.maxWeight = this.edges.reduce((max, edge) => Math.max(max, edge.weight || 1), 1)
+        // 节点对象被整批重建过，旧的 hover 引用会指向已丢弃的对象（坐标不再更新）。
+        this.hover = null
         this.spread()
         this.applyLayout()
         this.alpha = 1
@@ -1212,8 +1246,12 @@ window.__ModuleLoader__.load({
         if (node.type === 'topic' && !this.view.showTopics) return false
         if (node.type === 'group' && !this.view.showGroups) return false
         if (node.type === 'self') return true
-        if (this.tierRank(node.tier) > this.tierRank(this.view.minTier)) return false
-        return true
+        return this.tierVisible().includes(node.tier)
+      }
+
+      /** 可见档位集合：兼容旧的 minTier 写法（老配置/导出文件里可能还是阈值）。 */
+      tierVisible() {
+        return tierVisibleOf(this.view)
       }
 
       /**
@@ -1382,7 +1420,9 @@ window.__ModuleLoader__.load({
         const focusSet = this.focus === null ? null : new Set([this.focus, ...(this.adj.get(this.focus) ?? [])])
         const selectedSet = this.selected === null ? null : new Set([this.selected, ...(this.adj.get(this.selected) ?? [])])
         const hoverSet = this.hover === null ? null : new Set([this.hover, ...(this.adj.get(this.hover) ?? [])])
-        const highlight = selectedSet ?? focusSet ?? hoverSet
+        // 悬停优先：悬停是「我现在正指着谁」，选中/聚焦是「我之前锁定了谁」。
+        // 反过来会让鼠标指到别人时高亮仍停在旧节点上，看起来像点了才亮。
+        const highlight = hoverSet ?? selectedSet ?? focusSet
 
         // ---- 边 ----
         // 真星系没有连线：边默认全隐，只在高亮时浮现一跳邻居，
@@ -1447,15 +1487,24 @@ window.__ModuleLoader__.load({
           const { node, p } = item
           const isSelected = node.id === this.selected
           const isFocus = node.id === this.focus
+          // 悬停必须和选中/聚焦同级：否则鼠标移上去以后 highlight 变非空、
+          // 该节点自身反而被 dim 掉并且不进 forced 标签队列 —— 用户看到的就是
+          // 「鼠标一靠近名字全消失，点不到人」。
+          const isHover = this.hover !== null && node.id === this.hover.id
           const dimmed = highlight !== null && !highlight.has(node.id)
           const depth = depthFactor(p.depth, zMin, zMax)
           let alpha = item.alpha
-          if (dimmed) alpha *= 0.22
+          // 标签可见性用「没被 dim 压过」的亮度判断：
+          // 否则鼠标一移到画布上就产生 highlight，全盘标签同时跌破阈值一起消失，
+          // 用户看到的正是「鼠标移过去名字全没了，选不到人」。
+          let labelAlpha = alpha * depth.a
+          if (dimmed) alpha *= 0.55
           alpha *= depth.a
           const searched = this.view.search.trim() !== ''
           if (searched) {
             const hit = String(node.label ?? '').toLowerCase().includes(this.view.search.trim().toLowerCase())
             alpha = hit ? Math.min(1, alpha + 0.3) : alpha * 0.2
+            labelAlpha = alpha
           }
           const radius = Math.max(1.4, node.r * depth.r)
           const glowRadius = radius * (isSelected ? Math.min(7, this.view.glow * 1.9) : Math.min(5.2, this.view.glow * 1.05))
@@ -1512,13 +1561,14 @@ window.__ModuleLoader__.load({
           }
 
           // 标签是「星系读感」的头号杀手：几十个中文名铺满盘面会把旋臂彻底盖掉。
-          // 改成按重要度分位取样（labelDensity），自己/选中/聚焦永远保留。
-          const forced = node.type === 'self' || isSelected || isFocus
+          // 改成按重要度分位取样（labelDensity）；自己/悬停/选中/聚焦永远保留 ——
+          // 悬停必须在内，否则鼠标移上去的瞬间这个人的名字就没了，根本选不中。
+          const forced = node.type === 'self' || isHover || isSelected || isFocus
           const density = clampNum(this.view.labelDensity ?? 0.34, 0, 1)
           const ranked = this.labelRank.get(node.id) ?? 1
-          const showLabel = this.view.labels && alpha > 0.3 && (forced || (density > 0 && ranked <= density && radius > 2.2))
+          const showLabel = this.view.labels && labelShouldShow(forced, labelAlpha, ranked, radius, density)
           if (showLabel) {
-            labelQueue.push({ node, p, radius, alpha, isSelected, color })
+            labelQueue.push({ node, p, radius, alpha: labelAlpha, isSelected, isHover, color })
           }
         }
 
@@ -1537,7 +1587,7 @@ window.__ModuleLoader__.load({
           labelQueue.sort((a, b) => (b.node.score || 0) - (a.node.score || 0))
           const placed = []
           for (const item of labelQueue) {
-            const { node, p, radius, alpha, isSelected } = item
+            const { node, p, radius, alpha, isSelected, isHover } = item
             const text = shortLabel(node.label, isSelected ? 20 : 11)
             const size = Math.max(10.5, Math.min(13.5, 10.5 + radius * 0.15))
             ctx.font = `${node.type === 'self' ? 600 : 400} ${size}px ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif`
@@ -1549,12 +1599,13 @@ window.__ModuleLoader__.load({
             const bw = width + 8
             const bh = size + 3
             const clash = placed.some(box => !(bx > box[0] + box[2] || bx + bw < box[0] || by > box[1] + box[3] || by + bh < box[1]))
-            if (clash && !isSelected && node.type !== 'self') continue
+            // 悬停的标签必须画：否则「鼠标移上去名字消失」正是用户点不到人的直接原因。
+            if (clash && !isSelected && !isHover && node.type !== 'self') continue
             placed.push([bx, by, bw, bh])
-            ctx.globalAlpha = Math.min(0.96, alpha)
+            ctx.globalAlpha = Math.min(0.96, isHover ? 1 : alpha)
             ctx.shadowColor = 'rgba(2,4,10,0.92)'
-            ctx.shadowBlur = 6
-            ctx.fillStyle = node.type === 'self' ? '#fff8e6' : (node.type === 'topic' ? '#ffd7ee' : '#dfe9fb')
+            ctx.shadowBlur = isHover ? 9 : 6
+            ctx.fillStyle = node.type === 'self' ? '#fff8e6' : (node.type === 'topic' ? '#ffd7ee' : (isHover ? '#ffffff' : '#dfe9fb'))
             ctx.fillText(text, p.sx, by + 1.5)
             ctx.shadowBlur = 0
             ctx.shadowColor = 'rgba(0,0,0,0)'
@@ -1664,7 +1715,18 @@ window.__ModuleLoader__.load({
           return
         }
         const hit = this.pick(sx, sy)
-        const node = hit === null ? null : hit.node
+        let node = hit === null ? null : hit.node
+        // 粘滞命中：盘面在自转，光标不动节点也会漂走，一秒内 hover 反复抽搐
+        // 就是这个原因。只要光标还在当前悬停节点的宽松半径内，就继续算命中它。
+        if (this.hover !== null) {
+          const current = this.project(this.hover)
+          const dx = current.sx - sx
+          const dy = current.sy - sy
+          const sticky = Math.max(26, this.hover.r * 2.6)
+          if (Math.sqrt(dx * dx + dy * dy) <= sticky && (node === null || node.id !== this.hover.id)) {
+            node = this.hover
+          }
+        }
         if ((node?.id ?? null) !== (this.hover?.id ?? null)) {
           this.hover = node
           this.handlers.onHover?.(node === null ? null : {
@@ -1687,7 +1749,9 @@ window.__ModuleLoader__.load({
         if (state.moved > 6) return
         const rect = this.canvas.getBoundingClientRect()
         const hit = this.pick(event.clientX - rect.left, event.clientY - rect.top)
-        const node = hit === null ? null : hit.node
+        // 点下去时若精确命中不到，就认用户当前看到的那个悬停节点：
+        // 界面上已经在高亮它、tooltip 也写着它的名字，此时判定为「点空」最反直觉。
+        const node = hit !== null ? hit.node : this.hover
         this.handlers.onPick?.(node === null ? null : {
           id: node.id, label: node.label, type: node.type, score: node.score, tier: node.tier, username: node.username,
         })
@@ -1696,8 +1760,8 @@ window.__ModuleLoader__.load({
       onDoubleClick(event) {
         const rect = this.canvas.getBoundingClientRect()
         const hit = this.pick(event.clientX - rect.left, event.clientY - rect.top)
-        if (hit !== null) {
-          const node = hit.node
+        const node = hit !== null ? hit.node : this.hover
+        if (node !== null && node !== undefined) {
           this.camera.panX = 0
           this.camera.panY = 0
           this.handlers.onFocus?.(node.id)
@@ -2109,7 +2173,7 @@ window.__ModuleLoader__.load({
       const [playing, setPlaying] = useState(false)
       const [view, setView] = useState({
         showTopics: true, showGroups: true, showCooccurrence: true,
-        minTier: 'weak', pulse: true, labels: true,
+        tierVisible: TIER_VISIBLE_DEFAULT.slice(), pulse: true, labels: true,
         glow: VIEW_DEFAULTS.glow, spin: VIEW_DEFAULTS.spin, labelDensity: VIEW_DEFAULTS.labelDensity,
         tiltDeg: VIEW_DEFAULTS.tiltDeg, zoom: VIEW_DEFAULTS.zoom,
         autoRotate: !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
@@ -2420,10 +2484,8 @@ window.__ModuleLoader__.load({
               TIERS.filter(tier => tier.id !== 'topic').map(tier => h('label', { className: 'wneur-check', key: tier.id },
                 h('input', {
                   type: 'checkbox',
-                  checked: (TIER_ORDER[view.minTier] ?? 4) >= (TIER_ORDER[tier.id] ?? 4),
-                  onChange: (event) => {
-                    if (!event.target.checked) patchView({ minTier: tier.id })
-                  },
+                  checked: tierVisibleOf(view).includes(tier.id),
+                  onChange: () => patchView({ tierVisible: toggleTier(view.tierVisible, tier.id) }),
                 }),
                 h('i', { className: 'wneur-dot', style: { color: tier.color, width: 7, height: 7 } }),
                 tier.label,
@@ -2606,6 +2668,7 @@ window.__ModuleLoader__.load({
         TUNING, RANDOM_RANGES, tuningDefaults, tuningRandom, formatKnob, applyStarPalette,
         readSavedTuning, writeSavedTuning, clearSavedTuning, TUNING_STORAGE_KEY,
         galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor, edgesToDraw,
+        TIER_ORDER, TIER_VISIBLE_DEFAULT, toggleTier, labelShouldShow,
       }
     }
 

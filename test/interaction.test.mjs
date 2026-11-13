@@ -28,7 +28,7 @@ function makeRenderer() {
   renderer.fit = 360
   renderer.view = {
     showTopics: true, showGroups: true, showCooccurrence: true,
-    minTier: 'weak', pulse: true, glow: 6, autoRotate: false, labels: true,
+    tierVisible: ['core', 'friend', 'regular', 'weak'], pulse: true, glow: 6, autoRotate: false, labels: true,
     search: '', timeIndex: -1, highlightOnly: false,
   }
   return renderer
