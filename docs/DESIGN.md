@@ -696,7 +696,12 @@ p_i  += (target_i - p_i) · ease              // 三轴各自线性缓动
     }
   ],
   "edges": [
-    { "id": "e_0012", "source": "s", "target": "p_0007", "type": "chat", "weight": 1284, "directed": true }
+    {
+      "id": "e_0012", "source": "s", "target": "p_0007", "type": "chat", "weight": 1284, "directed": true,
+      "series":     [0, 3, 0, 12, 7, 0, 0, 21],
+      "sentSeries": [0, 1, 0,  5, 6, 0, 0,  9],
+      "recvSeries": [0, 2, 0,  7, 1, 0, 0, 12]
+    }
   ],
   "timeline": {
     "bucket": "week",
@@ -716,6 +721,11 @@ p_i  += (target_i - p_i) · ease              // 三轴各自线性缓动
                "initiation": 0.44, "depth": 0.35, "intimacy": 0.52 },
   "distribution": { "text": 0.71, "image": 0.14, "voice": 0.08, "file": 0.05, "other": 0.02 },
   "topKeywords": [{ "w": "需求", "n": 88 }, { "w": "评审", "n": 51 }],
+  "relation": {
+    "edgeId": "e_0012",
+    "series": [0, 3, 0, 12, 7, 0, 0, 21], "sentSeries": [0, 1, 0, 5, 6, 0, 0, 9], "recvSeries": [0, 2, 0, 7, 1, 0, 0, 12],
+    "buckets": ["2026-W37", "2026-W38", "2026-W39", "2026-W40", "2026-W41", "2026-W42", "2026-W43", "2026-W44"]
+  },
   "samples": [
     { "time": "2026-11-08T14:02:00+08:00", "from": "them", "type": "text", "text": "● ● ● ●" }
   ]
@@ -870,15 +880,15 @@ ctx.slot('main').register({ key: 'wechat-neuron', component: NeuronPanel })
 
 ### v0.2（真实数据与多维深化）
 
+- **已完成**：关系随时间活起来 —— 聊天边逐桶序列（`series`/`sentSeries`/`recvSeries`）、回放态按当期强度浮现的关系边、「关系热度」抽屉柱图、回放速度三档（慢 700 / 正常 420 / 快 200 ms）。
 - chatlog 适配器打通 + import 适配器（CSV 列映射 UI）。
-- 时间轴播放与回放速度、筛选器 DSL 全部落地。
+- 筛选器 DSL 落地。
 - 头像贴图、群内成员卫星点、话题突触簇聚合。
 - 导出 CSV / GraphML；脱敏模式。
 - 聚合节点可展开（LOD 两级）。
 
 ### v0.3（分析与体验）
 
-- 关系演化动画（「关系生长」回放：按时间逐步长出轴突）。
 - 社区发现（Louvain 简化版）自动着色 + 桥接节点标记。
 - 朋友圈（`sns.db`）作为亲密强度辅证（需用户显式开启）。
 - 大图 WebGL 后端评估（仅在节点 > 8000 时启用）。

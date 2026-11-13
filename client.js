@@ -337,6 +337,9 @@ window.__ModuleLoader__.load({
 .wneur-donut li { display: flex; align-items: center; gap: 6px; }
 .wneur-donut li span { color: var(--wnr-dim); margin-left: auto; font-variant-numeric: tabular-nums; }
 .wneur-spark { width: 100%; height: 46px; display: block; overflow: visible; }
+.wneur-relation-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 2px;
+  font-size: 10.5px; color: var(--wnr-dim); font-variant-numeric: tabular-nums; }
+.wneur-relation .wneur-note { margin-top: 2px; font-size: 10.5px; }
 .wneur-samples { display: flex; flex-direction: column; gap: 6px; }
 .wneur-sample { font-size: 11.5px; line-height: 1.55; padding: 7px 9px; border-radius: 8px;
   background: var(--wnr-tint-2); border: 1px solid var(--wnr-border); color: var(--wnr-body); }
@@ -623,6 +626,21 @@ window.__ModuleLoader__.load({
     }
 
     const TUNING_STORAGE_KEY = 'wechat-neuron.tuning.v1'
+
+    /**
+     * 回放速度三档。
+     *
+     * 为什么是 420ms 做「正常」：这是 v0.1 写死的间隔，老用户已经习惯这个节奏；
+     * 改默认值会让同一份数据「看起来变快了」，属于无谓的行为变更。
+     * 慢档给双周粒度看细节，快档给 100+ 桶的长历史一口气扫完。
+     */
+    const PLAYBACK_SPEEDS = [
+      { id: 'slow', label: '慢', ms: 700 },
+      { id: 'normal', label: '正常', ms: 420 },
+      { id: 'fast', label: '快', ms: 200 },
+    ]
+    const PLAYBACK_DEFAULT = 'normal'
+    const speedMs = (id) => (PLAYBACK_SPEEDS.find(item => item.id === id) ?? PLAYBACK_SPEEDS[1]).ms
 
     /** 读本机保存的调校值；任何脏数据都退回出厂值，不让面板因存储损坏而崩。 */
     function readSavedTuning() {
@@ -997,7 +1015,55 @@ window.__ModuleLoader__.load({
      * 边默认不画：真星系没有连线。只在高亮时浮现一跳邻居，
      * 另外常显权重最高的 topN 条极淡边，作为「这张图有关系」的提示。
      */
-    function edgesToDraw(edges, highlight, topN = 12) {
+    /**
+     * 关系强度（v0.2）：与 lib/host/pulse.js 的 edgePulse 同一公式。
+     *
+     * 为什么这里要重写一份：渲染层是模块工厂里的普通函数，不能 import ESM；
+     * 两边的等价性由 test/edge-pulse.test.mjs 钉住，改一边不改另一边会红。
+     */
+    function edgePulse(series, scale, index, total, maxTotal) {
+      const fallback = () => {
+        const max = Number.isFinite(maxTotal) && maxTotal > 0 ? maxTotal : 1
+        return Math.min(1, Math.max(0, (Number.isFinite(total) && total > 0 ? total : 0) / max))
+      }
+      if (!Array.isArray(series) || !Array.isArray(scale)) return fallback()
+      if (!Number.isInteger(index) || index < 0 || index >= series.length || index >= scale.length) return fallback()
+      const value = Number.isFinite(series[index]) ? series[index] : 0
+      if (value <= 0) return 0
+      const baseline = Math.max(1, Number.isFinite(scale[index]) ? scale[index] : 1)
+      return Math.min(1, 1 - Math.exp(-value / baseline))
+    }
+
+    /** 每个时间桶的强度基线（与 pulse.js 的 baselinePerBucket 同义）。 */
+    function baselinePerBucket(seriesList, length) {
+      const total = Number.isInteger(length) && length > 0 ? length : 0
+      if (total === 0) return []
+      const sums = new Array(total).fill(0)
+      const counts = new Array(total).fill(0)
+      for (const series of Array.isArray(seriesList) ? seriesList : []) {
+        if (!Array.isArray(series)) continue
+        const limit = Math.min(total, series.length)
+        for (let index = 0; index < limit; index += 1) {
+          const value = series[index]
+          if (Number.isFinite(value) && value > 0) {
+            sums[index] += value
+            counts[index] += 1
+          }
+        }
+      }
+      return sums.map((sum, index) => (counts[index] === 0 ? 0 : sum / counts[index]))
+    }
+
+    /**
+     * 该画哪些边。
+     *
+     * 默认（timeIndex < 0）：真星系没有连线 —— 只在高亮时浮现一跳邻居，
+     * 外加权重最高的 topN 条极淡线，作为「这张图有关系」的提示。
+     *
+     * 回放中（timeIndex >= 0）：关系自己会呼吸 —— 当期没有消息的边直接不画，
+     * 其余的按当期强度排序取前 topN。高亮的边永远画（用户正在看它）。
+     */
+    function edgesToDraw(edges, highlight, topN = 12, replay = null) {
       const out = []
       const lit = new Set()
       if (highlight !== null && highlight !== undefined) {
@@ -1007,6 +1073,22 @@ window.__ModuleLoader__.load({
             lit.add(edge)
           }
         }
+      }
+      const replaying = replay !== null && replay !== undefined && Number.isInteger(replay.index) && replay.index >= 0
+      const pulseOf = (edge) => (replaying
+        ? edgePulse(edge.series, replay.scale, replay.index, edge.weight, replay.maxWeight)
+        : Math.min(1, Math.max(0, (edge.weight || 0)) / Math.max(1, replay?.maxWeight ?? 1)))
+      if (replaying) {
+        const ranked = edges
+          .filter(edge => !lit.has(edge) && pulseOf(edge) > 0)
+          .sort((a, b) => pulseOf(b) - pulseOf(a))
+        let shown = 0
+        for (const edge of ranked) {
+          if (shown >= topN) break
+          out.push({ edge, kind: 'replay', pulse: pulseOf(edge) })
+          shown += 1
+        }
+        return out
       }
       const ranked = edges.slice().sort((a, b) => (b.weight || 1) - (a.weight || 1))
       let faint = 0
@@ -1204,6 +1286,13 @@ window.__ModuleLoader__.load({
           this.adj.get(edge.b.id).add(edge.a.id)
         }
         this.maxWeight = this.edges.reduce((max, edge) => Math.max(max, edge.weight || 1), 1)
+        // 回放用：每个时间桶「一条普通关系大约多少条消息」，以及桶数。
+        const bucketCount = Array.isArray(graph.timeline) ? graph.timeline.length : 0
+        this.bucketCount = bucketCount
+        this.replayScale = baselinePerBucket(
+          this.edges.filter(edge => edge.type === 'chat').map(edge => edge.series),
+          bucketCount,
+        )
         // 节点对象被整批重建过，旧的 hover 引用会指向已丢弃的对象（坐标不再更新）。
         this.hover = null
         this.spread()
@@ -1432,20 +1521,30 @@ window.__ModuleLoader__.load({
           .filter(edge => (edge.type !== 'co-occurrence' || this.view.showCooccurrence)
             && (edge.type !== 'topic' || this.view.showTopics))
 
-        for (const { edge, kind } of edgesToDraw(visibleEdges, highlight, 12)) {
+        const replayIndex = this.view.timeIndex >= 0 && this.view.timeIndex < this.bucketCount ? this.view.timeIndex : -1
+        const replay = replayIndex >= 0 ? { index: replayIndex, scale: this.replayScale, maxWeight: this.maxWeight } : null
+        for (const { edge, kind, pulse } of edgesToDraw(visibleEdges, highlight, replay === null ? 12 : 16, replay)) {
           const pa = projected.get(edge.a.id)
           const pb = projected.get(edge.b.id)
           if (!pa || !pb) continue
           const weight = Math.min(1, (edge.weight || 1) / this.maxWeight)
           const litEdge = kind === 'lit'
-          const alpha = litEdge ? 0.30 + weight * 0.25 : 0.10
-          const color = edge.type === 'group-member' ? '#5ee7d0'
-            : edge.type === 'co-occurrence' ? '#a98bff'
-              : edge.type === 'topic' ? '#ff7ac6' : brand
+          const replayEdge = kind === 'replay'
+          const alpha = litEdge ? 0.30 + weight * 0.25
+            : replayEdge ? 0.09 + (pulse ?? 0) * 0.30
+              : 0.10
+          // 回放态统一走冷色星尘：这时表达的是「关系强度」，不是「关系类型」，
+          // 四色会让整屏变成彩色网，和星系观感冲突。
+          const color = replayEdge ? '#8fd4ff'
+            : edge.type === 'group-member' ? '#5ee7d0'
+              : edge.type === 'co-occurrence' ? '#a98bff'
+                : edge.type === 'topic' ? '#ff7ac6' : brand
           ctx.globalCompositeOperation = 'lighter'
           ctx.strokeStyle = color
           ctx.globalAlpha = alpha
-          ctx.lineWidth = litEdge ? 0.9 + weight * 1.4 : 1
+          ctx.lineWidth = litEdge ? 0.9 + weight * 1.4
+            : replayEdge ? 0.55 + (pulse ?? 0) * 1.7
+              : 1
           const mx = (pa.sx + pb.sx) / 2 + (pa.sy - pb.sy) * 0.08
           const my = (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * 0.08
           ctx.beginPath()
@@ -1877,6 +1976,79 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * 关系热度：把某条 chat 边的逐桶序列摊成柱子。
+     *
+     * 只做「算术」，不碰 DOM —— 这样 curl 出来的数据、真实数据、
+     * 脏数据都能在测试里钉死，UI 只是它的投影。
+     */
+    function relationBars(relation) {
+      const series = Array.isArray(relation?.series) ? relation.series : []
+      if (series.length === 0) return []
+      const sent = Array.isArray(relation.sentSeries) ? relation.sentSeries : []
+      const recv = Array.isArray(relation.recvSeries) ? relation.recvSeries : []
+      const buckets = Array.isArray(relation.buckets) ? relation.buckets : []
+      const values = series.map(value => (Number.isFinite(value) && value > 0 ? value : 0))
+      const max = Math.max(1, ...values)
+      return values.map((value, index) => {
+        // 收发拆分在脏数据下可能超过总量（源里两条统计口径不一致），按比例收回来，
+        // 否则柱子的描边会溢出到柱子外面。
+        const s = Math.min(value, Number.isFinite(sent[index]) && sent[index] > 0 ? sent[index] : 0)
+        const r = Math.min(value - s, Number.isFinite(recv[index]) && recv[index] > 0 ? recv[index] : 0)
+        return { t: buckets[index] ?? '', value, ratio: value / max, sent: s, recv: r }
+      })
+    }
+
+    /** 一段关系的时间轮廓：峰值在哪、活跃过几个桶、最后一次活跃。 */
+    function relationTrend(relation) {
+      const bars = relationBars(relation)
+      let peakValue = 0
+      let peakT = ''
+      let lastActiveT = ''
+      let activeBuckets = 0
+      for (const bar of bars) {
+        if (bar.value <= 0) continue
+        activeBuckets += 1
+        lastActiveT = bar.t
+        if (bar.value >= peakValue) { peakValue = bar.value; peakT = bar.t }
+      }
+      return { peakT, peakValue, activeBuckets, totalBuckets: bars.length, lastActiveT }
+    }
+
+    /**
+     * 关系热度曲线：竖柱 + 收发分色。
+     *
+     * 为什么用柱不用折线：bucket 是离散的周/月，折线会暗示桶之间有连续变化；
+     * 柱能诚实表达「这一周有 9 条，下一周 0 条」的断裂。
+     */
+    function RelationChart({ relation, color }) {
+      const bars = relationBars(relation)
+      if (bars.length === 0) return null
+      const trend = relationTrend(relation)
+      const width = 260
+      const height = 46
+      const slot = width / bars.length
+      const barWidth = Math.max(1, Math.min(6, slot - 0.6))
+      return h('div', { className: 'wneur-relation' },
+        h('svg', { className: 'wneur-spark', viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'none', role: 'img',
+          'aria-label': `关系热度：峰值 ${trend.peakT || '无'} ${trend.peakValue} 条` },
+          bars.map((bar, index) => {
+            if (bar.value <= 0) return null
+            const full = (height - 4) * bar.ratio
+            const x = index * slot + (slot - barWidth) / 2
+            const baseY = height - 2
+            const sentH = bar.value === 0 ? 0 : (full * bar.sent) / bar.value
+            return h('g', { key: index },
+              h('rect', { x, y: baseY - full, width: barWidth, height: full, rx: 1, fill: color, fillOpacity: 0.34 }),
+              // 我发出的那部分画成实色，压在柱子上半段：一眼看出「谁在主动」
+              sentH > 0 && h('rect', { x, y: baseY - sentH, width: barWidth, height: sentH, rx: 1, fill: color, fillOpacity: 0.95 }))
+          })),
+        h('div', { className: 'wneur-relation-meta' },
+          h('span', null, `峰值 ${trend.peakT || '无记录'} · ${trend.peakValue} 条`),
+          h('span', null, `活跃 ${trend.activeBuckets}/${trend.totalBuckets} 桶`)),
+        trend.lastActiveT !== '' && h('div', { className: 'wneur-note' }, `最后活跃：${trend.lastActiveT}`))
+    }
+
     function DetailDrawer({ detail, loading, onClose, onFocus, onKeyword }) {
       if (loading) {
         return h('aside', { className: 'wneur-drawer' },
@@ -1911,6 +2083,10 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wneur-card' },
           h('h3', null, '月度活跃'),
           h(Sparkline, { data: detail.monthly, color })),
+        // 只有「我」与人/群的 chat 边才有逐桶序列；群成员、话题等边没有关系可讲
+        detail.relation !== null && detail.relation !== undefined && h('div', { className: 'wneur-card' },
+          h('h3', null, '关系热度'),
+          h(RelationChart, { relation: detail.relation, color })),
         detail.topKeywords.length > 0 && h('div', { className: 'wneur-card' },
           h('h3', null, '高频关键词'),
           h('div', { className: 'wneur-chips' },
@@ -2170,6 +2346,7 @@ window.__ModuleLoader__.load({
       const [harvesting, setHarvesting] = useState(false)
       const [search, setSearch] = useState('')
       const [timeIndex, setTimeIndex] = useState(-1)
+      const [speed, setSpeed] = useState(PLAYBACK_DEFAULT)
       const [playing, setPlaying] = useState(false)
       const [view, setView] = useState({
         showTopics: true, showGroups: true, showCooccurrence: true,
@@ -2339,9 +2516,9 @@ window.__ModuleLoader__.load({
             if (next >= total) { setPlaying(false); return total - 1 }
             return next
           })
-        }, 420)
+        }, speedMs(speed))
         return () => window.clearInterval(timer)
-      }, [playing, graph])
+      }, [playing, graph, speed])
 
       // 快捷键
       useEffect(() => {
@@ -2570,6 +2747,15 @@ window.__ModuleLoader__.load({
             onClick: () => setPlaying(value => !value), disabled: buckets === 0,
           }, playing ? '暂停' : '播放'),
           h('button', { className: 'wneur-btn', onClick: () => { setPlaying(false); setTimeIndex(-1) }, disabled: timeIndex < 0 }, '全部'),
+          // 速度三档贴在一起，靠 aria-pressed 表达当前档，不额外占宽度
+          h('span', { className: 'wneur-speed', role: 'group', 'aria-label': '回放速度' },
+            PLAYBACK_SPEEDS.map(item => h('button', {
+              key: item.id,
+              className: 'wneur-btn',
+              'aria-pressed': speed === item.id,
+              title: `${item.ms}ms / 桶`,
+              onClick: () => setSpeed(item.id),
+            }, item.label))),
           h('input', {
             type: 'range', min: 0, max: Math.max(0, buckets - 1), value: Math.max(0, timeIndex),
             onChange: (event) => { setPlaying(false); setTimeIndex(Number(event.target.value)) },
@@ -2668,6 +2854,7 @@ window.__ModuleLoader__.load({
         TUNING, RANDOM_RANGES, tuningDefaults, tuningRandom, formatKnob, applyStarPalette,
         readSavedTuning, writeSavedTuning, clearSavedTuning, TUNING_STORAGE_KEY,
         galaxyMath, layoutGalaxyTargets, generateDiskPoints, renderDiskBitmap, makeStarSprite, depthFactor, edgesToDraw,
+        edgePulse, baselinePerBucket, PLAYBACK_SPEEDS, PLAYBACK_DEFAULT, speedMs, relationBars, relationTrend,
         TIER_ORDER, TIER_VISIBLE_DEFAULT, toggleTier, labelShouldShow,
       }
     }
